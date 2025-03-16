@@ -56,7 +56,30 @@
      float move_speed;        
      int texture_quality;     
      int enable_filtering;    
-     int enable_antialiasing; 
+     int enable_antialiasing;
+     
+     // fog settings
+     int enable_fog;
+     float fog_density;
+     int fog_r, fog_g, fog_b;
+     float fog_start_distance;
+     float fog_end_distance;
+     
+     // lighting settings
+     int enable_colored_lighting;
+     int ambient_light_r, ambient_light_g, ambient_light_b;
+     float default_light_intensity;
+     
+     // room settings
+     int default_room_height;
+     int ceiling_texture_id;
+     int floor_texture_id;
+     
+     // advanced rendering
+     float texture_scaling;
+     int enable_shadows;
+     float shadow_intensity;
+     int render_distance;
  } EngineConfig;
  
  // global variables
@@ -84,6 +107,8 @@
  void init_camera(void);
  void update_camera_direction(void);
  int check_collision(float x, float z);
+ void setup_fog(void);
+ void init_perlin(void);
  
  // perlin noise generation prototypes
  float perlin_noise_2d(float x, float y);
@@ -151,7 +176,7 @@
      glViewport(0, 0, WINDOW_WIDTH, WINDOW_HEIGHT);
      glMatrixMode(GL_PROJECTION);
      glLoadIdentity();
-     gluPerspective(45.0f, (GLfloat)WINDOW_WIDTH / (GLfloat)WINDOW_HEIGHT, 0.1f, 100.0f);
+     gluPerspective(45.0f, (GLfloat)WINDOW_WIDTH / (GLfloat)WINDOW_HEIGHT, 0.1f, (GLfloat)config.render_distance);
      glMatrixMode(GL_MODELVIEW);
      
      // enable textures
@@ -160,220 +185,189 @@
      // set up lighting
      setup_lighting();
      
+     // set up fog if enabled
+     if (config.enable_fog) {
+         setup_fog();
+     }
+     
      // generate texture IDs
      glGenTextures(6, texture_ids);
  }
  
+/**
+ * save configuration to INI file
+ */
+void save_config(void) {
+    FILE *file = fopen(CONFIG_FILE, "w");
+    if (!file) {
+        fprintf(stderr, "ERROR: Could not save configuration to '%s'\n", CONFIG_FILE);
+        return;
+    }
+    
+    // Write header comment
+    fprintf(file, "# MOON Engine Configuration File\n");
+    fprintf(file, "# Auto-generated on %s\n\n", __DATE__);
+    
+    // Basic settings
+    fprintf(file, "fullscreen=%d\n", config.fullscreen);
+    fprintf(file, "rotation_speed=%f\n", config.rotation_speed);
+    fprintf(file, "move_speed=%f\n", config.move_speed);
+    fprintf(file, "texture_quality=%d\n", config.texture_quality);
+    fprintf(file, "enable_filtering=%d\n", config.enable_filtering);
+    fprintf(file, "enable_antialiasing=%d\n", config.enable_antialiasing);
+    
+    // Fog settings
+    fprintf(file, "\n# Fog settings\n");
+    fprintf(file, "enable_fog=%d\n", config.enable_fog);
+    fprintf(file, "fog_density=%f\n", config.fog_density);
+    fprintf(file, "fog_r=%d\n", config.fog_r);
+    fprintf(file, "fog_g=%d\n", config.fog_g);
+    fprintf(file, "fog_b=%d\n", config.fog_b);
+    fprintf(file, "fog_start_distance=%f\n", config.fog_start_distance);
+    fprintf(file, "fog_end_distance=%f\n", config.fog_end_distance);
+    
+    // Lighting settings
+    fprintf(file, "\n# Lighting settings\n");
+    fprintf(file, "enable_colored_lighting=%d\n", config.enable_colored_lighting);
+    fprintf(file, "ambient_light_r=%d\n", config.ambient_light_r);
+    fprintf(file, "ambient_light_g=%d\n", config.ambient_light_g);
+    fprintf(file, "ambient_light_b=%d\n", config.ambient_light_b);
+    fprintf(file, "default_light_intensity=%f\n", config.default_light_intensity);
+    
+    // Room settings
+    fprintf(file, "\n# Room settings\n");
+    fprintf(file, "default_room_height=%d\n", config.default_room_height);
+    fprintf(file, "ceiling_texture_id=%d\n", config.ceiling_texture_id);
+    fprintf(file, "floor_texture_id=%d\n", config.floor_texture_id);
+    
+    // Advanced rendering
+    fprintf(file, "\n# Advanced rendering\n");
+    fprintf(file, "texture_scaling=%f\n", config.texture_scaling);
+    fprintf(file, "enable_shadows=%d\n", config.enable_shadows);
+    fprintf(file, "shadow_intensity=%f\n", config.shadow_intensity);
+    fprintf(file, "render_distance=%d\n", config.render_distance);
+    
+    fclose(file);
+    printf("Configuration saved to '%s'\n", CONFIG_FILE);
+}
+
  /**
-  * load configuration from INI file
-  */
- void load_config(void) {
-     FILE *file = fopen(CONFIG_FILE, "r");
-     
-     // default configuration
-     config.fullscreen = 0;
-     config.rotation_speed = 1.0f;
-     config.move_speed = 0.1f;
-     config.texture_quality = 64;  // Size of noise textures
-     config.enable_filtering = 1;
-     config.enable_antialiasing = 1;
-     
-     if (file) {
-         char line[128];
-         char key[64];
-         char value[64];
-         
-         while (fgets(line, sizeof(line), file)) {
-             if (sscanf(line, "%[^=]=%s", key, value) == 2) {
-                 if (strcmp(key, "fullscreen") == 0) {
-                     config.fullscreen = atoi(value);
-                 } else if (strcmp(key, "rotation_speed") == 0) {
-                     config.rotation_speed = (float)atof(value);
-                 } else if (strcmp(key, "move_speed") == 0) {
-                     config.move_speed = (float)atof(value);
-                 } else if (strcmp(key, "texture_quality") == 0) {
-                     config.texture_quality = atoi(value);
-                 } else if (strcmp(key, "enable_filtering") == 0) {
-                     config.enable_filtering = atoi(value);
-                 } else if (strcmp(key, "enable_antialiasing") == 0) {
-                     config.enable_antialiasing = atoi(value);
-                 }
-             }
-         }
-         
-         fclose(file);
-     } else {
-         // configuration file not found, create it
-         save_config();
-     }
-     
-     // apply fullscreen if configured
-     if (config.fullscreen) {
-         glutFullScreen();
-     }
- }
- 
- /**
-  * save configuration to INI file
-  */
- void save_config(void) {
-     FILE *file = fopen(CONFIG_FILE, "w");
-     
-     if (file) {
-         fprintf(file, "fullscreen=%d\n", config.fullscreen);
-         fprintf(file, "rotation_speed=%f\n", config.rotation_speed);
-         fprintf(file, "move_speed=%f\n", config.move_speed);
-         fprintf(file, "texture_quality=%d\n", config.texture_quality);
-         fprintf(file, "enable_filtering=%d\n", config.enable_filtering);
-         fprintf(file, "enable_antialiasing=%d\n", config.enable_antialiasing);
-         fclose(file);
-     }
- }
- 
- /**
-  * generate procedural noise textures
-  */
- void generate_noise_textures(void) {
-     int i;
-     int size = config.texture_quality;
-     unsigned char* texture_data = (unsigned char*)malloc(size * size * 3);
-     
-     if (!texture_data) {
-         fprintf(stderr, "Failed to allocate texture memory\n");
-         return;
-     }
-     
-     for (i = 0; i < 6; i++) {
-         // generate unique noise for each cube face
-         generate_perlin_texture(texture_data, size, size, i);
-         
-         // bind and upload texture
-         glBindTexture(GL_TEXTURE_2D, texture_ids[i]);
-         
-         // apply texture filtering based on config
-         if (config.enable_filtering) {
-             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-         } else {
-             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-         }
-         
-         // upload the texture
-         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, size, size, 0, 
-                     GL_RGB, GL_UNSIGNED_BYTE, texture_data);
-     }
-     
-     free(texture_data);
- }
- 
- /**
-  * render a frame
-  */
- void render_scene(void) {
-     //clear the screen and depth buffer
-     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-     glLoadIdentity();
-     
-     //apply pitch (vertical looking)
-     glRotatef(camera.pitch, 1.0f, 0.0f, 0.0f);
-     
-     //position camera 
-     gluLookAt(
-         camera.pos_x, camera.pos_y, camera.pos_z,                // eye position
-         camera.pos_x + camera.dir_x, camera.pos_y, camera.pos_z + camera.dir_z, // look at pos
-         0.0f, 1.0f, 0.0f                                        // up vector
-     );
-     
-     //enable texturing
-     glEnable(GL_TEXTURE_2D);
-     
-     //draw the room based on the map 
-     int x, z;
-     for (z = 0; z < world_map.height; z++) {
-         for (x = 0; x < world_map.width; x++) {
-             if (world_map.cells[z][x] == '0') {
-                 continue; // Empty space - nothing to render
-             }
-             
-             // Calculate wall type (1-9)
-             int wall_type = (world_map.cells[z][x] - '0') % 6;
-             if (wall_type < 0) wall_type = 0;
-             
-             // Bind appropriate texture
-             glBindTexture(GL_TEXTURE_2D, texture_ids[wall_type]);
-             
-             // Draw cube at position
-             glPushMatrix();
-             glTranslatef((float)x + 0.5f, 0.5f, (float)z + 0.5f);
-             glScalef(0.5f, 0.5f, 0.5f);
-             
-             // Draw all sides of the cube
-             // Front face
-             glBegin(GL_QUADS);
-                 glNormal3f(0.0f, 0.0f, 1.0f);
-                 glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f,  1.0f);
-                 glTexCoord2f(1.0f, 0.0f); glVertex3f( 1.0f, -1.0f,  1.0f);
-                 glTexCoord2f(1.0f, 1.0f); glVertex3f( 1.0f,  1.0f,  1.0f);
-                 glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f,  1.0f);
-             glEnd();
-             
-             // Back face
-             glBegin(GL_QUADS);
-                 glNormal3f(0.0f, 0.0f, -1.0f);
-                 glTexCoord2f(1.0f, 0.0f); glVertex3f(-1.0f, -1.0f, -1.0f);
-                 glTexCoord2f(1.0f, 1.0f); glVertex3f(-1.0f,  1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 1.0f); glVertex3f( 1.0f,  1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 0.0f); glVertex3f( 1.0f, -1.0f, -1.0f);
-             glEnd();
-             
-             // Top face
-             glBegin(GL_QUADS);
-                 glNormal3f(0.0f, 1.0f, 0.0f);
-                 glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f,  1.0f,  1.0f);
-                 glTexCoord2f(1.0f, 0.0f); glVertex3f( 1.0f,  1.0f,  1.0f);
-                 glTexCoord2f(1.0f, 1.0f); glVertex3f( 1.0f,  1.0f, -1.0f);
-             glEnd();
-             
-             // Bottom face
-             glBegin(GL_QUADS);
-                 glNormal3f(0.0f, -1.0f, 0.0f);
-                 glTexCoord2f(1.0f, 1.0f); glVertex3f(-1.0f, -1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 1.0f); glVertex3f( 1.0f, -1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 0.0f); glVertex3f( 1.0f, -1.0f,  1.0f);
-                 glTexCoord2f(1.0f, 0.0f); glVertex3f(-1.0f, -1.0f,  1.0f);
-             glEnd();
-             
-             // Right face
-             glBegin(GL_QUADS);
-                 glNormal3f(1.0f, 0.0f, 0.0f);
-                 glTexCoord2f(1.0f, 0.0f); glVertex3f( 1.0f, -1.0f, -1.0f);
-                 glTexCoord2f(1.0f, 1.0f); glVertex3f( 1.0f,  1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 1.0f); glVertex3f( 1.0f,  1.0f,  1.0f);
-                 glTexCoord2f(0.0f, 0.0f); glVertex3f( 1.0f, -1.0f,  1.0f);
-             glEnd();
-             
-             // Left face
-             glBegin(GL_QUADS);
-                 glNormal3f(-1.0f, 0.0f, 0.0f);
-                 glTexCoord2f(0.0f, 0.0f); glVertex3f(-1.0f, -1.0f,  1.0f);
-                 glTexCoord2f(1.0f, 0.0f); glVertex3f(-1.0f, -1.0f, -1.0f);
-                 glTexCoord2f(1.0f, 1.0f); glVertex3f(-1.0f,  1.0f, -1.0f);
-                 glTexCoord2f(0.0f, 1.0f); glVertex3f(-1.0f,  1.0f,  1.0f);
-             glEnd();
-             
-             glPopMatrix();
-         }
-     }
-     
-     // Swap buffers
-     glutSwapBuffers();
-     
-     // Handle input
-     handle_keyboard();
-     handle_mouse();
- }
+ * load configuration from INI file
+ */
+void load_config(void) {
+    FILE *file = fopen(CONFIG_FILE, "r");
+    
+    // default configuration
+    config.fullscreen = 0;
+    config.rotation_speed = 1.0f;
+    config.move_speed = 0.1f;
+    config.texture_quality = 64;  // Size of noise textures
+    config.enable_filtering = 1;
+    config.enable_antialiasing = 1;
+    
+    // fog defaults
+    config.enable_fog = 1;
+    config.fog_density = 0.03f;
+    config.fog_r = 128;
+    config.fog_g = 128;
+    config.fog_b = 200;
+    config.fog_start_distance = 5.0f;
+    config.fog_end_distance = 15.0f;
+    
+    // lighting defaults
+    config.enable_colored_lighting = 1;
+    config.ambient_light_r = 20;
+    config.ambient_light_g = 20;
+    config.ambient_light_b = 20;
+    config.default_light_intensity = 0.8f;
+    
+    // room defaults
+    config.default_room_height = 1;
+    config.ceiling_texture_id = 1;
+    config.floor_texture_id = 2;
+    
+    // advanced rendering defaults
+    config.texture_scaling = 1.0f;
+    config.enable_shadows = 0;
+    config.shadow_intensity = 0.5f;
+    config.render_distance = 20;
+    
+    if (file) {
+        char line[128];
+        char key[64];
+        char value[64];
+        
+        while (fgets(line, sizeof(line), file)) {
+            if (line[0] == ';' || line[0] == '#') // skip comments
+                continue;
+                
+            if (sscanf(line, "%[^=]=%s", key, value) == 2) {
+                // basic settings
+                if (strcmp(key, "fullscreen") == 0) {
+                    config.fullscreen = atoi(value);
+                } else if (strcmp(key, "rotation_speed") == 0) {
+                    config.rotation_speed = (float)atof(value);
+                } else if (strcmp(key, "move_speed") == 0) {
+                    config.move_speed = (float)atof(value);
+                } else if (strcmp(key, "texture_quality") == 0) {
+                    config.texture_quality = atoi(value);
+                } else if (strcmp(key, "enable_filtering") == 0) {
+                    config.enable_filtering = atoi(value);
+                } else if (strcmp(key, "enable_antialiasing") == 0) {
+                    config.enable_antialiasing = atoi(value);
+                } 
+                // fog settings
+                else if (strcmp(key, "enable_fog") == 0) {
+                    config.enable_fog = atoi(value);
+                } else if (strcmp(key, "fog_density") == 0) {
+                    config.fog_density = (float)atof(value);
+                } else if (strcmp(key, "fog_r") == 0) {
+                    config.fog_r = atoi(value);
+                } else if (strcmp(key, "fog_g") == 0) {
+                    config.fog_g = atoi(value);
+                } else if (strcmp(key, "fog_b") == 0) {
+                    config.fog_b = atoi(value);
+                } else if (strcmp(key, "fog_start_distance") == 0) {
+                    config.fog_start_distance = (float)atof(value);
+                } else if (strcmp(key, "fog_end_distance") == 0) {
+                    config.fog_end_distance = (float)atof(value);
+                }
+                // lighting settings
+                else if (strcmp(key, "enable_colored_lighting") == 0) {
+                    config.enable_colored_lighting = atoi(value);
+                } else if (strcmp(key, "ambient_light_r") == 0) {
+                    config.ambient_light_r = atoi(value);
+                } else if (strcmp(key, "ambient_light_g") == 0) {
+                    config.ambient_light_g = atoi(value);
+                } else if (strcmp(key, "ambient_light_b") == 0) {
+                    config.ambient_light_b = atoi(value);
+                } else if (strcmp(key, "default_light_intensity") == 0) {
+                    config.default_light_intensity = (float)atof(value);
+                }
+                // room settings
+                else if (strcmp(key, "default_room_height") == 0) {
+                    config.default_room_height = atoi(value);
+                } else if (strcmp(key, "ceiling_texture_id") == 0) {
+                    config.ceiling_texture_id = atoi(value);
+                } else if (strcmp(key, "floor_texture_id") == 0) {
+                    config.floor_texture_id = atoi(value);
+                }
+                // advanced rendering
+                else if (strcmp(key, "texture_scaling") == 0) {
+                    config.texture_scaling = (float)atof(value);
+                } else if (strcmp(key, "enable_shadows") == 0) {
+                    config.enable_shadows = atoi(value);
+                } else if (strcmp(key, "shadow_intensity") == 0) {
+                    config.shadow_intensity = (float)atof(value);
+                } else if (strcmp(key, "render_distance") == 0) {
+                    config.render_distance = atoi(value);
+                }
+            }
+        }
+        fclose(file);
+        printf("Configuration loaded from '%s'\n", CONFIG_FILE);
+    }
+}
  
  /**
   * clean up resources
@@ -441,6 +435,159 @@
      }
  }
  
+
+/**
+ * generate procedural noise textures
+ */
+void generate_noise_textures(void) {
+    int i, width, height;
+    unsigned char *texture_data;
+    
+    // initialize perlin noise
+    init_perlin();
+    
+    width = height = config.texture_quality;
+    texture_data = (unsigned char*)malloc(width * height * 3); // RGB data
+    
+    if (!texture_data) {
+        fprintf(stderr, "ERROR: Could not allocate memory for textures!\n");
+        return;
+    }
+    
+    // generate different textures for each surface type
+    for (i = 0; i < 6; i++) {
+        // generate the texture data
+        generate_perlin_texture(texture_data, width, height, i);
+        
+        // bind and configure texture
+        glBindTexture(GL_TEXTURE_2D, texture_ids[i]);
+        
+        // set texture parameters
+        if (config.enable_filtering) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        } else {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        }
+        
+        // upload texture data
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, width, height, 0, GL_RGB, 
+                     GL_UNSIGNED_BYTE, texture_data);
+    }
+    
+    // free temporary memory
+    free(texture_data);
+    
+    printf("Generated %d procedural textures at %dx%d resolution\n", 
+           6, width, height);
+}
+
+/**
+ * render the scene
+ */
+void render_scene(void) {
+    // process input
+    handle_keyboard();
+    handle_mouse();
+    
+    // clear the screen
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    glLoadIdentity();
+    
+    // set camera pos and orientation
+    float pitch_rad = camera.pitch * 0.0174532925f; // convert to radians
+    glRotatef(camera.pitch, 1.0f, 0.0f, 0.0f);     // pitch (x-axis rotation)
+    gluLookAt(
+        camera.pos_x, camera.pos_y, camera.pos_z,                  // camera position
+        camera.pos_x + camera.dir_x, camera.pos_y, camera.pos_z + camera.dir_z,  // look target
+        0.0f, 1.0f, 0.0f                           // up vector
+    );
+    
+    // draw floor and ceiling
+    glEnable(GL_TEXTURE_2D);
+    
+    // draw walls
+    int x, z;
+    for (z = 0; z < world_map.height; z++) {
+        for (x = 0; x < world_map.width; x++) {
+            if (world_map.cells[z][x] != '0') {
+                // select texture based on wall type
+                int wall_type = (world_map.cells[z][x] - '0') % 6;
+                if (wall_type < 1) wall_type = 1; // Avoid texture 0
+                
+                glBindTexture(GL_TEXTURE_2D, texture_ids[wall_type - 1]);
+                
+                // draw wall block
+                glBegin(GL_QUADS);
+                
+                // set material properties
+                if (config.enable_colored_lighting) {
+                    // customize colors based on wall type
+                    float r = 0.8f, g = 0.8f, b = 0.8f;
+                    switch (wall_type) {
+                        case 1: r = 1.0f; g = 0.8f; b = 0.8f; break; // Reddish
+                        case 2: r = 0.8f; g = 1.0f; b = 0.8f; break; // Greenish
+                        case 3: r = 0.8f; g = 0.8f; b = 1.0f; break; // Bluish
+                        case 4: r = 1.0f; g = 1.0f; b = 0.8f; break; // Yellowish
+                        case 5: r = 0.8f; g = 1.0f; b = 1.0f; break; // Cyanish
+                        case 6: r = 1.0f; g = 0.8f; b = 1.0f; break; // Magentaish
+                    }
+                    GLfloat mat_diffuse[] = { r, g, b, 1.0f };
+                    glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
+                }
+                
+                // north wall face
+                glTexCoord2f(0.0f, 0.0f); glVertex3f(x, 0.0f, z);
+                glTexCoord2f(1.0f, 0.0f); glVertex3f(x + 1.0f, 0.0f, z);
+                glTexCoord2f(1.0f, 1.0f); glVertex3f(x + 1.0f, 1.0f, z);
+                glTexCoord2f(0.0f, 1.0f); glVertex3f(x, 1.0f, z);
+                
+                // south wall face
+                glTexCoord2f(0.0f, 0.0f); glVertex3f(x, 0.0f, z + 1.0f);
+                glTexCoord2f(1.0f, 0.0f); glVertex3f(x + 1.0f, 0.0f, z + 1.0f);
+                glTexCoord2f(1.0f, 1.0f); glVertex3f(x + 1.0f, 1.0f, z + 1.0f);
+                glTexCoord2f(0.0f, 1.0f); glVertex3f(x, 1.0f, z + 1.0f);
+                
+                // east wall face
+                glTexCoord2f(0.0f, 0.0f); glVertex3f(x + 1.0f, 0.0f, z);
+                glTexCoord2f(1.0f, 0.0f); glVertex3f(x + 1.0f, 0.0f, z + 1.0f);
+                glTexCoord2f(1.0f, 1.0f); glVertex3f(x + 1.0f, 1.0f, z + 1.0f);
+                glTexCoord2f(0.0f, 1.0f); glVertex3f(x + 1.0f, 1.0f, z);
+                
+                // west wall face
+                glTexCoord2f(0.0f, 0.0f); glVertex3f(x, 0.0f, z);
+                glTexCoord2f(1.0f, 0.0f); glVertex3f(x, 0.0f, z + 1.0f);
+                glTexCoord2f(1.0f, 1.0f); glVertex3f(x, 1.0f, z + 1.0f);
+                glTexCoord2f(0.0f, 1.0f); glVertex3f(x, 1.0f, z);
+                
+                glEnd();
+            }
+        }
+    }
+    
+    // draw floor
+    glBindTexture(GL_TEXTURE_2D, texture_ids[config.floor_texture_id - 1]);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(0.0f, 0.0f, 0.0f);
+    glTexCoord2f(world_map.width, 0.0f); glVertex3f(world_map.width, 0.0f, 0.0f);
+    glTexCoord2f(world_map.width, world_map.height); glVertex3f(world_map.width, 0.0f, world_map.height);
+    glTexCoord2f(0.0f, world_map.height); glVertex3f(0.0f, 0.0f, world_map.height);
+    glEnd();
+    
+    // draw ceiling
+    glBindTexture(GL_TEXTURE_2D, texture_ids[config.ceiling_texture_id - 1]);
+    glBegin(GL_QUADS);
+    glTexCoord2f(0.0f, 0.0f); glVertex3f(0.0f, 1.0f, 0.0f);
+    glTexCoord2f(world_map.width, 0.0f); glVertex3f(world_map.width, 1.0f, 0.0f);
+    glTexCoord2f(world_map.width, world_map.height); glVertex3f(world_map.width, 1.0f, world_map.height);
+    glTexCoord2f(0.0f, world_map.height); glVertex3f(0.0f, 1.0f, world_map.height);
+    glEnd();
+    
+    // swap buffers to display the scene
+    glutSwapBuffers();
+}
+
  /**
   * set up lighting
   */
@@ -511,6 +658,29 @@
      
      return 0;
  }
+
+ /**
+ * set up fog effects
+ */
+void setup_fog(void) {
+    GLfloat fog_color[4] = {
+        config.fog_r / 255.0f,
+        config.fog_g / 255.0f,
+        config.fog_b / 255.0f,
+        1.0f
+    };
+    
+    // Enable fog
+    glEnable(GL_FOG);
+    glFogi(GL_FOG_MODE, GL_LINEAR);  // Use linear fog mode
+    glFogfv(GL_FOG_COLOR, fog_color);
+    glFogf(GL_FOG_DENSITY, config.fog_density);
+    glHint(GL_FOG_HINT, GL_NICEST);  // Use best fog quality
+    
+    // Set fog start and end distances
+    glFogf(GL_FOG_START, config.fog_start_distance);
+    glFogf(GL_FOG_END, config.fog_end_distance);
+}
  
  /**
   * load map data
