@@ -9,6 +9,7 @@
  #include <string.h>
  #include <time.h>
  #include <math.h>
+ #include <stdarg.h> // Add this line
  
  // use older OpenGL for maximum compatibility
  #ifdef _WIN32
@@ -29,10 +30,15 @@
  // configuration constants
  #define WINDOW_WIDTH 320
  #define WINDOW_HEIGHT 240
- #define WINDOW_TITLE "MOON Engine v0.1"
+ #define WINDOW_TITLE "MOON Engine v0.2"
  #define CONFIG_FILE "config.ini"
  #define MAP_FILE "map.txt"
- #define MAP_SIZE 32 // Maximum map dimensions
+ #define MAP_SIZE 32 // max map dimensions
+
+ #define CELL_EMPTY '0'
+ #define CELL_WALL '1'
+ #define CELL_PLAYER '2'
+ #define CELL_LIGHT '3'
  
  // camera structure
  typedef struct {
@@ -49,6 +55,26 @@
      char cells[MAP_SIZE][MAP_SIZE];
  } Map;
  
+ // Message display system
+ #define MAX_MESSAGE_LENGTH 256
+ #define MAX_ACTIVE_MESSAGES 5
+ #define MESSAGE_DISPLAY_TIME 2.0f  // Default display time in seconds
+
+ typedef struct {
+     char text[MAX_MESSAGE_LENGTH];  // Message text
+     float display_time;             // How long to display (seconds)
+     float start_time;               // When the message started
+     int is_active;                  // Whether this message is currently displayed
+     float r, g, b;                  // RGB color for the main message
+     float highlight_r, highlight_g, highlight_b;  // RGB color for highlighted parts
+     char* highlight_word;           // Word to highlight (e.g., "ON", "OFF")
+ } ScreenMessage;
+
+ // Global message system state
+ ScreenMessage messages[MAX_ACTIVE_MESSAGES];
+ int current_message_slot = 0;
+ int message_count = 0;
+
  // engine state structure
  typedef struct {
      int fullscreen;          
@@ -80,6 +106,8 @@
      int enable_shadows;
      float shadow_intensity;
      int render_distance;
+
+     int is_mouse_captured;       // Track if mouse is currently captured
  } EngineConfig;
  
  // global variables
@@ -109,6 +137,14 @@
  int check_collision(float x, float z);
  void setup_fog(void);
  void init_perlin(void);
+ void append_to_console(const char* message); // Add this line
+ void draw_message(const char* text, float x, float y, float r, float g, float b); // Add this line
+ void show_message(const char* format, ...); // Add this line
+ void show_message_with_highlight(const char* message, const char* highlight_word, // Add this line
+                                  float r, float g, float b, 
+                                  float highlight_r, float highlight_g, float highlight_b); // Add this line
+ void update_messages(void); // Add this line
+ void draw_messages(void); // Add this line
  
  // perlin noise generation prototypes
  float perlin_noise_2d(float x, float y);
@@ -153,6 +189,12 @@
      glutKeyboardUpFunc(keyboard_up_func);
      glutPassiveMotionFunc(passive_motion_func);
  
+     // Enable mouse capture by default
+     glutSetCursor(GLUT_CURSOR_NONE);
+     config.is_mouse_captured = 1;
+     glutWarpPointer(WINDOW_WIDTH/2, WINDOW_HEIGHT/2);
+     show_message("Mouse captured. Press F for fullscreen.");
+
      // main loop
      glutMainLoop();
      
@@ -192,6 +234,9 @@
      
      // generate texture IDs
      glGenTextures(6, texture_ids);
+
+     // Initialize mouse capture state to be enabled by default
+     config.is_mouse_captured = 1;
  }
  
 /**
@@ -200,15 +245,15 @@
 void save_config(void) {
     FILE *file = fopen(CONFIG_FILE, "w");
     if (!file) {
-        fprintf(stderr, "ERROR: Could not save configuration to '%s'\n", CONFIG_FILE);
+        fprintf(stderr, "ERROR: COULD NOT SAVE CONFIG TO '%s'\n", CONFIG_FILE);
         return;
     }
     
-    // Write header comment
-    fprintf(file, "# MOON Engine Configuration File\n");
-    fprintf(file, "# Auto-generated on %s\n\n", __DATE__);
+    // write header comment
+    fprintf(file, "# MOON ENGINE CONFIG FILE\n");
+    fprintf(file, "# AUTO-GENERATED ON %s\n\n", __DATE__);
     
-    // Basic settings
+    // basic settings
     fprintf(file, "fullscreen=%d\n", config.fullscreen);
     fprintf(file, "rotation_speed=%f\n", config.rotation_speed);
     fprintf(file, "move_speed=%f\n", config.move_speed);
@@ -217,7 +262,7 @@ void save_config(void) {
     fprintf(file, "enable_antialiasing=%d\n", config.enable_antialiasing);
     
     // Fog settings
-    fprintf(file, "\n# Fog settings\n");
+    fprintf(file, "\n# FOG SETTINGS\n");
     fprintf(file, "enable_fog=%d\n", config.enable_fog);
     fprintf(file, "fog_density=%f\n", config.fog_density);
     fprintf(file, "fog_r=%d\n", config.fog_r);
@@ -227,7 +272,7 @@ void save_config(void) {
     fprintf(file, "fog_end_distance=%f\n", config.fog_end_distance);
     
     // Lighting settings
-    fprintf(file, "\n# Lighting settings\n");
+    fprintf(file, "\n# LIGHTING SETTINGS\n");
     fprintf(file, "enable_colored_lighting=%d\n", config.enable_colored_lighting);
     fprintf(file, "ambient_light_r=%d\n", config.ambient_light_r);
     fprintf(file, "ambient_light_g=%d\n", config.ambient_light_g);
@@ -235,20 +280,20 @@ void save_config(void) {
     fprintf(file, "default_light_intensity=%f\n", config.default_light_intensity);
     
     // Room settings
-    fprintf(file, "\n# Room settings\n");
+    fprintf(file, "\n# ROOM SETTINGS\n");
     fprintf(file, "default_room_height=%d\n", config.default_room_height);
     fprintf(file, "ceiling_texture_id=%d\n", config.ceiling_texture_id);
     fprintf(file, "floor_texture_id=%d\n", config.floor_texture_id);
     
     // Advanced rendering
-    fprintf(file, "\n# Advanced rendering\n");
+    fprintf(file, "\n# ADVANCED RENDERINGDF\n");
     fprintf(file, "texture_scaling=%f\n", config.texture_scaling);
     fprintf(file, "enable_shadows=%d\n", config.enable_shadows);
     fprintf(file, "shadow_intensity=%f\n", config.shadow_intensity);
     fprintf(file, "render_distance=%d\n", config.render_distance);
     
     fclose(file);
-    printf("Configuration saved to '%s'\n", CONFIG_FILE);
+    printf("CONFIG SAVED TO '%s'\n", CONFIG_FILE);
 }
 
  /**
@@ -261,7 +306,7 @@ void load_config(void) {
     config.fullscreen = 0;
     config.rotation_speed = 1.0f;
     config.move_speed = 0.1f;
-    config.texture_quality = 64;  // Size of noise textures
+    config.texture_quality = 64;  
     config.enable_filtering = 1;
     config.enable_antialiasing = 1;
     
@@ -291,6 +336,9 @@ void load_config(void) {
     config.enable_shadows = 0;
     config.shadow_intensity = 0.5f;
     config.render_distance = 20;
+
+    // Default mouse capture state
+    config.is_mouse_captured = 0;
     
     if (file) {
         char line[128];
@@ -365,7 +413,7 @@ void load_config(void) {
             }
         }
         fclose(file);
-        printf("Configuration loaded from '%s'\n", CONFIG_FILE);
+        printf("CONFIG LOADED FROM '%s'\n", CONFIG_FILE);
     }
 }
  
@@ -493,6 +541,10 @@ void render_scene(void) {
     
     // clear the screen
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    
+    // Update and potentially display messages
+    update_messages();
+    
     glLoadIdentity();
     
     // set camera pos and orientation
@@ -511,29 +563,19 @@ void render_scene(void) {
     int x, z;
     for (z = 0; z < world_map.height; z++) {
         for (x = 0; x < world_map.width; x++) {
-            if (world_map.cells[z][x] != '0') {
-                // select texture based on wall type
-                int wall_type = (world_map.cells[z][x] - '0') % 6;
-                if (wall_type < 1) wall_type = 1; // Avoid texture 0
-                
-                glBindTexture(GL_TEXTURE_2D, texture_ids[wall_type - 1]);
+            char cell_type = world_map.cells[z][x];
+            
+            // Only render walls for CELL_WALL (code '1')
+            if (cell_type == CELL_WALL) {
+                // Use texture 0 for standard walls
+                glBindTexture(GL_TEXTURE_2D, texture_ids[0]);
                 
                 // draw wall block
                 glBegin(GL_QUADS);
                 
                 // set material properties
                 if (config.enable_colored_lighting) {
-                    // customize colors based on wall type
-                    float r = 0.8f, g = 0.8f, b = 0.8f;
-                    switch (wall_type) {
-                        case 1: r = 1.0f; g = 0.8f; b = 0.8f; break; // Reddish
-                        case 2: r = 0.8f; g = 1.0f; b = 0.8f; break; // Greenish
-                        case 3: r = 0.8f; g = 0.8f; b = 1.0f; break; // Bluish
-                        case 4: r = 1.0f; g = 1.0f; b = 0.8f; break; // Yellowish
-                        case 5: r = 0.8f; g = 1.0f; b = 1.0f; break; // Cyanish
-                        case 6: r = 1.0f; g = 0.8f; b = 1.0f; break; // Magentaish
-                    }
-                    GLfloat mat_diffuse[] = { r, g, b, 1.0f };
+                    GLfloat mat_diffuse[] = { 0.8f, 0.8f, 0.8f, 1.0f }; // Standard wall color
                     glMaterialfv(GL_FRONT, GL_DIFFUSE, mat_diffuse);
                 }
                 
@@ -563,6 +605,56 @@ void render_scene(void) {
                 
                 glEnd();
             }
+            // Handle light sources - render a small glowing cube
+            else if (cell_type == CELL_LIGHT) {
+                // Use texture 2 for lights
+                glBindTexture(GL_TEXTURE_2D, texture_ids[2]);
+                
+                // Draw a smaller cube for the light source
+                glBegin(GL_QUADS);
+                
+                // Set light material properties - emissive to make it glow
+                if (config.enable_colored_lighting) {
+                    GLfloat light_emission[] = {0.8f, 0.8f, 1.0f, 1.0f}; // Bluish glow
+                    glMaterialfv(GL_FRONT, GL_EMISSION, light_emission);
+                }
+                
+                float light_size = 0.3f; // Smaller than a regular block
+                float light_offset = (1.0f - light_size) / 2.0f; // Center in the cell
+                
+                // Top face (small cube)
+                glTexCoord2f(0.0f, 0.0f); 
+                glVertex3f(x + light_offset, 0.5f, z + light_offset);
+                glTexCoord2f(1.0f, 0.0f); 
+                glVertex3f(x + light_offset + light_size, 0.5f, z + light_offset);
+                glTexCoord2f(1.0f, 1.0f); 
+                glVertex3f(x + light_offset + light_size, 0.5f, z + light_offset + light_size);
+                glTexCoord2f(0.0f, 1.0f); 
+                glVertex3f(x + light_offset, 0.5f, z + light_offset + light_size);
+                
+                // Add remaining faces for the light cube
+                // ...
+
+                glEnd();
+                
+                // Reset emission to zero (important!)
+                if (config.enable_colored_lighting) {
+                    GLfloat no_emission[] = {0.0f, 0.0f, 0.0f, 1.0f};
+                    glMaterialfv(GL_FRONT, GL_EMISSION, no_emission);
+                }
+                
+                // Create an actual light source at this position for OpenGL lighting
+                if (config.enable_colored_lighting) {
+                    GLfloat light_position[] = {x + 0.5f, 0.5f, z + 0.5f, 1.0f};
+                    GLfloat light_diffuse[] = {0.8f, 0.8f, 1.0f, 1.0f}; // Bluish light
+                    
+                    // Enable a second light (LIGHT1) for this source
+                    // Note: In a real game, you would manage multiple lights more carefully
+                    glEnable(GL_LIGHT1);
+                    glLightfv(GL_LIGHT1, GL_POSITION, light_position);
+                    glLightfv(GL_LIGHT1, GL_DIFFUSE, light_diffuse);
+                }
+            }
         }
     }
     
@@ -583,6 +675,9 @@ void render_scene(void) {
     glTexCoord2f(world_map.width, world_map.height); glVertex3f(world_map.width, 1.0f, world_map.height);
     glTexCoord2f(0.0f, world_map.height); glVertex3f(0.0f, 1.0f, world_map.height);
     glEnd();
+    
+    // Now draw messages in 2D overlay
+    draw_messages();
     
     // swap buffers to display the scene
     glutSwapBuffers();
@@ -651,8 +746,8 @@ void render_scene(void) {
          return 1;  // out of bounds is a collision
      }
      
-     // collision with walls (any non-zero character)
-     if (world_map.cells[map_z][map_x] != '0') {
+     // Only wall cells (1) cause collision
+     if (world_map.cells[map_z][map_x] == CELL_WALL) {
          return 1;
      }
      
@@ -742,6 +837,13 @@ void setup_fog(void) {
              col = 0;
              while (line[col] != '\0' && line[col] != '\n' && col < world_map.width) {
                  world_map.cells[row][col] = line[col];
+                 
+                 // set player position if found
+                 if (line[col] == CELL_PLAYER) {
+                     camera.pos_x = col + 0.5f;  // Center of the cell
+                     camera.pos_z = row + 0.5f;  // Center of the cell
+                     printf("Player starting position set to (%f, %f)\n", camera.pos_x, camera.pos_z);
+                 }
                  col++;
              }
              row++;
@@ -752,16 +854,73 @@ void setup_fog(void) {
      printf("MAP LOADED SUCCESSFULLY!\n");
  }
  
- //keyboard callback func
- void keyboard_func(unsigned char key, int x, int y) {
-     //set the key state to 'PRESSED'
-     keys[key] = 1;
- 
-     //handle ESC key first
-     if (key == 27) {
-         printf("EXITING PROGRAM...!\n");
-     }
- }
+ /**
+ * toggle fullscreen mode
+ */
+void toggle_fullscreen(void) {
+    config.fullscreen = !config.fullscreen;
+    
+    if (config.fullscreen) {
+        // Switch to fullscreen using GLUT
+        glutFullScreen();
+        
+        // Capture the mouse for proper freelook
+        glutSetCursor(GLUT_CURSOR_NONE);
+        config.is_mouse_captured = 1;
+        
+        // Reset mouse position to center to avoid sudden jumps
+        glutWarpPointer(glutGet(GLUT_WINDOW_WIDTH)/2, glutGet(GLUT_WINDOW_HEIGHT)/2);
+        
+        // Show on-screen message
+        show_message_with_highlight("FULL SCREEN ON", "ON", 
+                                   1.0f, 1.0f, 1.0f,  // White for main text 
+                                   1.0f, 0.0f, 0.0f); // Red for "ON"
+        
+        append_to_console("Switched to fullscreen mode");
+    } else {
+        // Switch back to windowed mode
+        glutReshapeWindow(WINDOW_WIDTH, WINDOW_HEIGHT);
+        glutPositionWindow(50, 50);
+        
+        // Release mouse
+        glutSetCursor(GLUT_CURSOR_INHERIT);
+        config.is_mouse_captured = 0;
+        
+        // Reset mouse handling state to avoid jumps when exiting fullscreen
+        glutWarpPointer(WINDOW_WIDTH/2, WINDOW_HEIGHT/2);
+        
+        // Show on-screen message
+        show_message_with_highlight("FULL SCREEN OFF", "OFF", 
+                                   1.0f, 1.0f, 1.0f,  // White for main text
+                                   1.0f, 0.0f, 0.0f); // Red for "OFF"
+        
+        append_to_console("Switched to windowed mode");
+    }
+}
+
+/**
+ * Simple console message function
+ */
+void append_to_console(const char* message) {
+    printf("CONSOLE: %s\n", message);
+}
+
+//keyboard callback func
+void keyboard_func(unsigned char key, int x, int y) {
+    // set the key state to 'PRESSED'
+    keys[key] = 1;
+
+    // handle ESC key first
+    if (key == 27) {
+        printf("EXITING PROGRAM...!\n");
+        exit(0);
+    } 
+    // handle F key for fullscreen toggle
+    else if (key == 'f' || key == 'F') {
+        toggle_fullscreen();
+        keys[key] = 0; // Clear key state to prevent repeated toggles
+    }
+}
  
  //keyboard up callback func
  void keyboard_up_func(unsigned char key, int x, int y) {
@@ -771,48 +930,62 @@ void setup_fog(void) {
  
  //passive motion callback func
  void passive_motion_func(int x, int y) {
-     static int last_x = WINDOW_WIDTH / 2;
-     static int last_y = WINDOW_HEIGHT / 2;
      static int first_time = 1;
+     static int last_x = 0;
+     static int last_y = 0;
+     static int center_x = 0;
+     static int center_y = 0;
      
+     // Initialize on first call
      if (first_time) {
          last_x = x;
-         last_y = y; 
+         last_y = y;
+         center_x = glutGet(GLUT_WINDOW_WIDTH) / 2;
+         center_y = glutGet(GLUT_WINDOW_HEIGHT) / 2;
          first_time = 0;
          return;
      }
- 
-    //calculate delta from last pos
-     int delta_x = x - last_x;
-     int delta_y = y - last_y;
- 
-     // Horizontal rotation (yaw)
-     if (delta_x != 0) {
-         camera_rotation += delta_x * config.rotation_speed * 0.1f;
-         update_camera_direction();
+
+     // If window size changed, update center coordinates
+     int window_width = glutGet(GLUT_WINDOW_WIDTH);
+     int window_height = glutGet(GLUT_WINDOW_HEIGHT);
+     if (center_x != window_width / 2 || center_y != window_height / 2) {
+         center_x = window_width / 2;
+         center_y = window_height / 2;
      }
+
+     // Calculate delta from last position (same for both modes)
+     int delta_x = x - center_x;
+     int delta_y = y - center_y;
      
-     //vertical rotation (pitch) - limited to avoid flipping
-     if (delta_y != 0) {
-         camera.pitch += delta_y * config.rotation_speed * 0.1f;
+     // Only process movement if there's a significant change
+     if (abs(delta_x) > 2 || abs(delta_y) > 2) {
+         // Apply mouse sensitivity - reduce these values if movement is too fast
+         float mouse_sensitivity = config.is_mouse_captured ? 0.01f : 0.05f;
+         
+         // Horizontal rotation (yaw)
+         camera_rotation += delta_x * config.rotation_speed * mouse_sensitivity;
+         update_camera_direction();
+         
+         // Vertical rotation (pitch) - FIX: Change -= to += to fix inversion
+         camera.pitch += delta_y * config.rotation_speed * mouse_sensitivity;
+         
          // Limit pitch to avoid gimbal lock
          if (camera.pitch > 89.0f) camera.pitch = 89.0f;
          if (camera.pitch < -89.0f) camera.pitch = -89.0f;
-     }
- 
-     //store last position
-     last_x = x;
-     last_y = y;
-     
-     //if significant movement occurred, request redraw
-     if (delta_x != 0 || delta_y != 0) {
+         
+         // If in captured mode, reset cursor to center to prevent hitting screen edges
+         if (config.is_mouse_captured) {
+             glutWarpPointer(center_x, center_y);
+         }
+         
+         // Request a redraw
          glutPostRedisplay();
      }
- 
-     if (config.fullscreen) {
-         //center mouse in fullscreen mode 
-         glutWarpPointer(WINDOW_WIDTH / 2, WINDOW_HEIGHT / 2);
-     }
+     
+     // Store current position for next frame
+     last_x = x;
+     last_y = y;
  }
  
  /**
@@ -919,17 +1092,10 @@ void setup_fog(void) {
   * handle mouse input
   */
  void handle_mouse(void) {
-     //get mouse position
-     int x, y;
-     static int last_x = WINDOW_WIDTH / 2;
-     static int last_y = WINDOW_HEIGHT / 2;
+     // This function is called from render_scene
+     // We no longer need to warp pointer here as it's handled in passive_motion_func
      
-     x = glutGet(GLUT_WINDOW_WIDTH) / 2;
-     y = glutGet(GLUT_WINDOW_HEIGHT) / 2;
-     
-     if (config.fullscreen) {
-         glutWarpPointer(x, y);
-     }
+     // Optional: Add any additional mouse handling here
  }
  
  //perlin noise implementation
@@ -1007,3 +1173,245 @@ void setup_fog(void) {
              v),
          w);
  }
+
+/**
+ * Message System Implementation
+ */
+
+/**
+ * Draw a text string at the specified position with the given color
+ * with bold effect
+ */
+void draw_message(const char* text, float x, float y, float r, float g, float b) {
+    // Save current attributes
+    glPushAttrib(GL_CURRENT_BIT | GL_LIGHTING_BIT | GL_TEXTURE_BIT);
+    
+    // Disable lighting and textures for text rendering
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    
+    // Set the text color
+    glColor3f(r, g, b);
+    
+    // Set to ortho projection for 2D rendering
+    glMatrixMode(GL_PROJECTION);
+    glPushMatrix();
+    glLoadIdentity();
+    gluOrtho2D(0.0, glutGet(GLUT_WINDOW_WIDTH), 0.0, glutGet(GLUT_WINDOW_HEIGHT));
+    
+    glMatrixMode(GL_MODELVIEW);
+    glPushMatrix();
+    glLoadIdentity();
+    
+    // Position the text
+    glRasterPos2f(x, y);
+    
+    // Draw each character in the string using a larger font
+    // Use TIMES_ROMAN_24 instead of HELVETICA_18 for larger text
+    for (int i = 0; text[i] != '\0'; i++) {
+        glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, text[i]);
+    }
+    
+    // Add bold effect by drawing the text again with small offsets
+    glRasterPos2f(x + 1, y);
+    for (int i = 0; text[i] != '\0'; i++) {
+        glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, text[i]);
+    }
+    
+    // Restore matrices
+    glPopMatrix();
+    glMatrixMode(GL_PROJECTION);
+    glPopMatrix();
+    glMatrixMode(GL_MODELVIEW);
+    
+    // Restore attributes
+    glPopAttrib();
+}
+
+/**
+ * Show a message on screen with standard formatting
+ */
+void show_message(const char* format, ...) {
+    va_list args;
+    char buffer[MAX_MESSAGE_LENGTH];
+    
+    va_start(args, format);
+    vsnprintf(buffer, MAX_MESSAGE_LENGTH, format, args);
+    va_end(args);
+    
+    // Find a free slot or replace the oldest message
+    int slot = current_message_slot;
+    current_message_slot = (current_message_slot + 1) % MAX_ACTIVE_MESSAGES;
+    
+    // Configure the message
+    strncpy(messages[slot].text, buffer, MAX_MESSAGE_LENGTH - 1);
+    messages[slot].display_time = MESSAGE_DISPLAY_TIME;
+    messages[slot].start_time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    messages[slot].is_active = 1;
+    messages[slot].r = messages[slot].g = messages[slot].b = 1.0f; // Default to white
+    messages[slot].highlight_word = NULL; // No highlight
+    
+    if (message_count < MAX_ACTIVE_MESSAGES) {
+        message_count++;
+    }
+}
+
+/**
+ * Show a message with a highlighted word (different color)
+ */
+void show_message_with_highlight(const char* message, const char* highlight_word, 
+                               float r, float g, float b, 
+                               float highlight_r, float highlight_g, float highlight_b) {
+    // Find a free slot or replace the oldest message
+    int slot = current_message_slot;
+    current_message_slot = (current_message_slot + 1) % MAX_ACTIVE_MESSAGES;
+    
+    // Configure the message
+    strncpy(messages[slot].text, message, MAX_MESSAGE_LENGTH - 1);
+    messages[slot].display_time = MESSAGE_DISPLAY_TIME;
+    messages[slot].start_time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    messages[slot].is_active = 1;
+    
+    // Set colors
+    messages[slot].r = r;
+    messages[slot].g = g;
+    messages[slot].b = b;
+    messages[slot].highlight_r = highlight_r;
+    messages[slot].highlight_g = highlight_g;
+    messages[slot].highlight_b = highlight_b;
+    
+    // Set highlighted word
+    messages[slot].highlight_word = (char*)highlight_word;
+    
+    if (message_count < MAX_ACTIVE_MESSAGES) {
+        message_count++;
+    }
+}
+
+/**
+ * Update message timers and deactivate expired messages
+ */
+void update_messages(void) {
+    float current_time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
+    int active_count = 0;
+    
+    for (int i = 0; i < MAX_ACTIVE_MESSAGES; i++) {
+        if (messages[i].is_active) {
+            float elapsed = current_time - messages[i].start_time;
+            if (elapsed >= messages[i].display_time) {
+                messages[i].is_active = 0; // Deactivate expired message
+            } else {
+                active_count++;
+            }
+        }
+    }
+    
+    message_count = active_count;
+}
+
+/**
+ * Draw all active messages
+ */
+void draw_messages(void) {
+    if (message_count == 0) return; // No messages to draw
+    
+    // Save current state
+    glPushAttrib(GL_ALL_ATTRIB_BITS);
+    glDisable(GL_DEPTH_TEST);
+    glDisable(GL_LIGHTING);
+    glDisable(GL_TEXTURE_2D);
+    
+    int window_width = glutGet(GLUT_WINDOW_WIDTH);
+    int window_height = glutGet(GLUT_WINDOW_HEIGHT);
+    
+    // Calculate base position for messages (center of screen)
+    float center_x = window_width / 2.0f;
+    float center_y = window_height / 2.0f;
+    
+    // Draw each active message
+    int msg_idx = 0;
+    for (int i = 0; i < MAX_ACTIVE_MESSAGES; i++) {
+        if (messages[i].is_active) {
+            // Simple message - draw directly
+            if (!messages[i].highlight_word) {
+                // Calculate text width for centering
+                float text_width = 0;
+                for (int j = 0; messages[i].text[j] != '\0'; j++) {
+                    text_width += glutBitmapWidth(GLUT_BITMAP_TIMES_ROMAN_24, messages[i].text[j]);
+                }
+                
+                float x = center_x - text_width / 2.0f;
+                float y = center_y + 30.0f * msg_idx; // Increased vertical spacing for larger text
+                
+                draw_message(messages[i].text, x, y, 
+                           messages[i].r, messages[i].g, messages[i].b);
+            }
+            // Message with highlighted word
+            else {
+                char* highlight = strstr(messages[i].text, messages[i].highlight_word);
+                
+                if (highlight) {
+                    char before[MAX_MESSAGE_LENGTH] = {0};
+                    char after[MAX_MESSAGE_LENGTH] = {0};
+                    
+                    // Split into segments
+                    int offset = highlight - messages[i].text;
+                    strncpy(before, messages[i].text, offset);
+                    before[offset] = '\0';
+                    
+                    strcpy(after, highlight + strlen(messages[i].highlight_word));
+                    
+                    // Calculate total width for centering
+                    float total_width = 0;
+                    for (int j = 0; messages[i].text[j] != '\0'; j++) {
+                        total_width += glutBitmapWidth(GLUT_BITMAP_TIMES_ROMAN_24, messages[i].text[j]);
+                    }
+                    
+                    // Calculate width of each part
+                    float before_width = 0;
+                    for (int j = 0; before[j] != '\0'; j++) {
+                        before_width += glutBitmapWidth(GLUT_BITMAP_TIMES_ROMAN_24, before[j]);
+                    }
+                    
+                    float highlight_width = 0;
+                    for (int j = 0; j < strlen(messages[i].highlight_word); j++) {
+                        highlight_width += glutBitmapWidth(GLUT_BITMAP_TIMES_ROMAN_24, 
+                                                       messages[i].highlight_word[j]);
+                    }
+                    
+                    // Calculate positions
+                    float x = center_x - total_width / 2.0f;
+                    float y = center_y + 30.0f * msg_idx; // Increased vertical spacing
+                    
+                    // Draw the parts with different colors
+                    draw_message(before, x, y, 
+                               messages[i].r, messages[i].g, messages[i].b);
+                    
+                    draw_message(messages[i].highlight_word, x + before_width, y,
+                               messages[i].highlight_r, messages[i].highlight_g, messages[i].highlight_b);
+                    
+                    draw_message(after, x + before_width + highlight_width, y,
+                               messages[i].r, messages[i].g, messages[i].b);
+                }
+                else {
+                    // Fallback if highlight word not found
+                    float text_width = 0;
+                    for (int j = 0; messages[i].text[j] != '\0'; j++) {
+                        text_width += glutBitmapWidth(GLUT_BITMAP_TIMES_ROMAN_24, messages[i].text[j]);
+                    }
+                    
+                    float x = center_x - text_width / 2.0f;
+                    float y = center_y + 30.0f * msg_idx;
+                    
+                    draw_message(messages[i].text, x, y, 
+                               messages[i].r, messages[i].g, messages[i].b);
+                }
+            }
+            
+            msg_idx++;
+        }
+    }
+    
+    // Restore state
+    glPopAttrib();
+}
