@@ -1,10 +1,10 @@
-//MAP EDITOR
+// map editor
 
 #include <stdio.h>
-//CLAIRE NOTES!!!:
-//PUT AN INDEX OF COLOR VALUES UP HERE SOMETIME BUT NOT NOW LOL WHENEVER
-//U WANT TO OK NO RUSH!! LOVE YA!!
-//--
+// claire notes!!!:
+// put an index of color values up here sometime but not now lol whenever
+// u want to ok no rush!! love ya!!
+// --
 //
 
 #include <stdlib.h>
@@ -22,7 +22,7 @@
 #define TOOL_WALL 1
 #define TOOL_PLAYER 2
 #define TOOL_LIGHT 3
-
+#define TOOL_COLOR_PICKER 4 
 #define TAB_PAINTER 0
 #define TAB_RENDERING 1
 #define TAB_TEXTURE 2
@@ -42,7 +42,7 @@
 #define MAX_CONSOLE_LINES 100
 #define MAX_CONSOLE_LINE_LENGTH 128
 
-// Color picker definitions
+// color picker definitions
 #define COLOR_PICKER_WIDTH 350
 #define COLOR_PICKER_HEIGHT 250
 
@@ -66,7 +66,7 @@ typedef struct {
 
 typedef struct {
     SDL_Rect rect;
-    char text[MAX_TEXT_INPUT_LENGTH + 1]; // +1 for null terminator
+    char text[MAX_TEXT_INPUT_LENGTH + 2]; // +2 because I'm Afraid So Very Very Afraid (Scared)
     int active;
     int cursorPosition;
     int maxLength;
@@ -84,17 +84,17 @@ typedef struct {
     void* userData;     
 } UIDialog;
 
-// New color picker structure
+// color picker structure
 typedef struct {
     int active;
     SDL_Rect rect;
     SDL_Rect previewRect;
-    SDL_Rect sliders[3];      // R, G, B sliders
-    UITextInput inputs[3];    // R, G, B text inputs
+    SDL_Rect sliders[3];      
+    UITextInput inputs[3];    
     SDL_Rect applyButton;
     SDL_Rect cancelButton;
-    SDL_Color currentColor;   // Current RGB values
-    SDL_Color originalColor;  // Original values before opening the picker
+    SDL_Color currentColor;   
+    SDL_Color originalColor;  
 } ColorPicker;
 
 typedef struct {
@@ -135,7 +135,7 @@ SDL_Window* window;
 SDL_Renderer* renderer;
 TTF_Font* font;
 EditorState editor;
-UIButton tools[4];
+UIButton tools[5];
 UITab tabs[4];
 CompileButton compileButtons[MAX_COMPILE_BUTTONS];
 
@@ -164,16 +164,17 @@ void open_map_in_editor();
 void show_map_not_found_dialog();
 void load_default_map();
 void draw_editor_title();
-void draw_right_panel_logo();
+void draw_panel_logo();
 void draw_console();
 void append_to_console(const char* message);
 void clear_console();
 void init_color_picker();
 void draw_color_picker(ColorPicker* picker);
 void handle_color_picker(ColorPicker* picker, SDL_Event* e);
+int is_light_color(SDL_Color color);
 
+// initialize editor
 void init_editor() {
-    // initialize editor state
     editor.map_w = 20;
     editor.map_h = 15;
     editor.selected_tool = 1;
@@ -181,22 +182,22 @@ void init_editor() {
     editor.player_pos.x = -1;
     editor.player_pos.y = -1;
     editor.light_placed = 0;
-    editor.zoom_factor = 1.0f;  // initialize zoom factor to 1.0 (no zoom)
+    editor.zoom_factor = 1.0f; 
     
-    // Initialize default light color to white
+    // initialize default light color
     editor.lightColor = (SDL_Color){255, 255, 255, 255};
     
-    // Initialize color picker
+    // initialize color picker
     init_color_picker();
     
-    // initialize text input fields for width and height - fix positioning
+    // initialize text input fields for width and height
     int inputWidth = 45;
     int inputHeight = 30;
     int inputPadding = 10;
     int inputStartY = 60;
     
     editor.sizeInputs[0].rect = (SDL_Rect){
-        WINDOW_WIDTH - UI_PANEL_WIDTH + 35, // increased to make room for W: label
+        WINDOW_WIDTH - UI_PANEL_WIDTH + 35,
         inputStartY,
         inputWidth,
         inputHeight
@@ -205,12 +206,12 @@ void init_editor() {
     editor.sizeInputs[0].active = 0;
     editor.sizeInputs[0].cursorPosition = strlen(editor.sizeInputs[0].text);
     editor.sizeInputs[0].maxLength = MAX_TEXT_INPUT_LENGTH;
-    editor.sizeInputs[0].selectionStart = -1;  // no selection initially
-    editor.sizeInputs[0].selectionEnd = -1;    // no selection initially
+    editor.sizeInputs[0].selectionStart = -1;
+    editor.sizeInputs[0].selectionEnd = -1;
     
-    // height input field (right) - more spacing between fields
+    // height input field (right)
     editor.sizeInputs[1].rect = (SDL_Rect){
-        WINDOW_WIDTH - UI_PANEL_WIDTH + UI_PANEL_WIDTH/2 + 5, // position in right half
+        WINDOW_WIDTH - UI_PANEL_WIDTH + UI_PANEL_WIDTH/2 + 5,
         inputStartY,
         inputWidth,
         inputHeight
@@ -219,8 +220,8 @@ void init_editor() {
     editor.sizeInputs[1].active = 0;
     editor.sizeInputs[1].cursorPosition = strlen(editor.sizeInputs[1].text);
     editor.sizeInputs[1].maxLength = MAX_TEXT_INPUT_LENGTH;
-    editor.sizeInputs[1].selectionStart = -1;  // no selection initially
-    editor.sizeInputs[1].selectionEnd = -1;    // no selection initially
+    editor.sizeInputs[1].selectionStart = -1;
+    editor.sizeInputs[1].selectionEnd = -1;
 
     // position apply beneath inputs
     editor.applyButton.rect = (SDL_Rect){
@@ -262,10 +263,9 @@ void init_editor() {
         30
     };
     
-    // center the grid initially
     center_grid();
 
-    // init tools panel with full-width buttons
+    // init tools panel
     tools[TOOL_OPEN].rect = (SDL_Rect){
         WINDOW_WIDTH-UI_PANEL_WIDTH+button_padding, 
         button_start_y + (button_height + button_y_spacing) * 1,
@@ -300,9 +300,18 @@ void init_editor() {
         button_height
     };
     strcpy(tools[TOOL_LIGHT].label, "LIGHT");
-    tools[TOOL_LIGHT].color = editor.lightColor; // Use the light color from editor state
+    tools[TOOL_LIGHT].color = editor.lightColor;
 
-    // init tabs - vertical layout next to right panel
+    tools[TOOL_COLOR_PICKER].rect = (SDL_Rect){
+        WINDOW_WIDTH - UI_PANEL_WIDTH + button_padding,
+        button_start_y + (button_height + button_y_spacing) * 5, 
+        button_width,
+        button_height
+    };
+    strcpy(tools[TOOL_COLOR_PICKER].label, "COLOR");
+    tools[TOOL_COLOR_PICKER].color = (SDL_Color){100, 100, 100, 255};
+
+    // init tabs
     int tab_width = 120;
     int tab_height = 30;
     int tab_padding = 5;
@@ -328,10 +337,9 @@ void init_editor() {
         }
     }
 
-    // initialize compile tab buttons
     init_compile_buttons();
 
-    // Initialize console
+    // initialize console
     editor.console.line_count = 0;
     editor.console.scroll_offset = 0;
     append_to_console("MOON Editor v0.3 initialized");
@@ -341,19 +349,19 @@ void init_editor() {
 void center_grid() {
     float zoomed_cell_size = CELL_SIZE * editor.zoom_factor;
     
-    // Calculate the available height (reduced by console height)
+    // calculate the available height
     int available_height = WINDOW_HEIGHT - CONSOLE_HEIGHT;
     
     editor.pan_offset.x = (WINDOW_WIDTH - UI_PANEL_WIDTH - (editor.map_w * zoomed_cell_size)) / 2;
     editor.pan_offset.y = (available_height - (editor.map_h * zoomed_cell_size)) / 2;
 }
 
+// change map size
 void change_map_size(void* userData) {
-    // get the new width and height from the input fields
     int newWidth = atoi(editor.sizeInputs[0].text);
     int newHeight = atoi(editor.sizeInputs[1].text);
     
-    // validate the input values (ensure they're within reasonable bounds)
+    // validate the input values
     if (newWidth < 5) newWidth = 5;
     if (newWidth > 99) newWidth = 99;
     if (newHeight < 5) newHeight = 5;
@@ -374,7 +382,6 @@ void change_map_size(void* userData) {
         }
     }
     
-    // center the grid
     center_grid();
 }
 
@@ -461,7 +468,7 @@ void draw_blocks() {
 int get_cursor_pos_from_mouse(UITextInput* input, int mouseX) {
     if (font == NULL) return 0;
     
-    int relativeX = mouseX - input->rect.x - 5; // relative to text start position
+    int relativeX = mouseX - input->rect.x - 5; 
     if (relativeX <= 0) return 0;
     
     // try each possible cursor position to find which one is closest to mouse
@@ -471,7 +478,7 @@ int get_cursor_pos_from_mouse(UITextInput* input, int mouseX) {
         tempText[pos] = '\0';
         
         SDL_Color textColor = {255, 255, 255, 255}; // added color definition
-        SDL_Surface* tempSurface = TTF_RenderText_Solid(font, tempText, textColor); // added missing color parameter
+        SDL_Surface* tempSurface = TTF_RenderText_Blended(font, tempText, textColor);
         if (tempSurface != NULL) {
             int textWidth = tempSurface->w;
             SDL_FreeSurface(tempSurface);
@@ -518,7 +525,7 @@ void draw_text_input(UITextInput* input) {
                 strncpy(beforeText, input->text, start);
                 beforeText[start] = '\0';
                 
-                SDL_Surface* beforeSurface = TTF_RenderText_Solid(font, beforeText, textColor);
+                SDL_Surface* beforeSurface = TTF_RenderText_Blended(font, beforeText, textColor);
                 if (beforeSurface != NULL) {
                     SDL_Texture* beforeTexture = SDL_CreateTextureFromSurface(renderer, beforeSurface);
                     if (beforeTexture != NULL) {
@@ -535,12 +542,12 @@ void draw_text_input(UITextInput* input) {
                 }
             }
             
-            // selected text (with different background)
+            // selected text
             char selectedText[MAX_TEXT_INPUT_LENGTH + 1] = {0};
             strncpy(selectedText, input->text + start, end - start);
             selectedText[end - start] = '\0';
             
-            SDL_Surface* selectedSurface = TTF_RenderText_Solid(font, selectedText, textColor);
+            SDL_Surface* selectedSurface = TTF_RenderText_Blended(font, selectedText, textColor);
             if (selectedSurface != NULL) {
                 int xPos = input->rect.x + 5;
                 if (start > 0) {
@@ -579,7 +586,7 @@ void draw_text_input(UITextInput* input) {
                 char afterText[MAX_TEXT_INPUT_LENGTH + 1] = {0};
                 strcpy(afterText, input->text + end);
                 
-                SDL_Surface* afterSurface = TTF_RenderText_Solid(font, afterText, textColor); // Added missing textColor parameter
+                SDL_Surface* afterSurface = TTF_RenderText_Blended(font, afterText, textColor); // added missing textColor parameter
                 if (afterSurface != NULL) {
                     int xPos = input->rect.x + 5;
                     char beforeEndText[MAX_TEXT_INPUT_LENGTH + 1] = {0};
@@ -608,7 +615,7 @@ void draw_text_input(UITextInput* input) {
             }
         } else {
             // regular text rendering without selection
-            SDL_Surface* textSurface = TTF_RenderText_Solid(font, input->text, textColor);
+            SDL_Surface* textSurface = TTF_RenderText_Blended(font, input->text, textColor);
             if (textSurface != NULL) {
                 SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                 if (textTexture != NULL) {
@@ -629,7 +636,7 @@ void draw_text_input(UITextInput* input) {
     // draw cursor when active and not selecting text
     if (input->active && (input->selectionStart == -1 || input->selectionEnd == -1)) {
         // get the width of the text up to cursor position
-        int cursorX = input->rect.x + 5; // start with padding
+        int cursorX = input->rect.x + 5;
         
         if (input->cursorPosition > 0 && font != NULL) {
             // get width of text before cursor
@@ -638,7 +645,7 @@ void draw_text_input(UITextInput* input) {
             tempText[input->cursorPosition] = '\0';
             
             SDL_Color textColor = {255, 255, 255, 255};
-            SDL_Surface* tempSurface = TTF_RenderText_Solid(font, tempText, textColor);
+            SDL_Surface* tempSurface = TTF_RenderText_Blended(font, tempText, textColor);
             if (tempSurface != NULL) {
                 cursorX += tempSurface->w;
                 SDL_FreeSurface(tempSurface);
@@ -835,7 +842,7 @@ void draw_dialog(UIDialog* dialog) {
         }
     }
     
-    // draw buttons
+    // DRAW BUTTONS
     // ok button
     SDL_SetRenderDrawColor(renderer, 80, 150, 80, 255);
     SDL_RenderFillRect(renderer, &dialog->okButton);
@@ -852,7 +859,7 @@ void draw_dialog(UIDialog* dialog) {
     if (font != NULL) {
         // ok button text
         SDL_Color textColor = {255, 255, 255, 255};
-        SDL_Surface* okSurface = TTF_RenderText_Solid(font, "OK", textColor);
+        SDL_Surface* okSurface = TTF_RenderText_Blended(font, "OK", textColor);
         if (okSurface != NULL) {
             SDL_Texture* okTexture = SDL_CreateTextureFromSurface(renderer, okSurface);
             if (okTexture != NULL) {
@@ -869,7 +876,7 @@ void draw_dialog(UIDialog* dialog) {
         }
         
         // cancel button text
-        SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "Cancel", textColor);
+        SDL_Surface* cancelSurface = TTF_RenderText_Blended(font, "Cancel", textColor);
         if (cancelSurface != NULL) {
             SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(renderer, cancelSurface);
             if (cancelTexture != NULL) {
@@ -907,7 +914,7 @@ void draw_ui() {
         // draw tab label
         if (font != NULL) {
             SDL_Color textColor = {255, 255, 255, 255};
-            SDL_Surface* textSurface = TTF_RenderText_Solid(font, tabs[i].label, textColor);
+            SDL_Surface* textSurface = TTF_RenderText_Blended(font, tabs[i].label, textColor);
             if (textSurface != NULL) {
                 SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                 if (textTexture != NULL) {
@@ -925,7 +932,7 @@ void draw_ui() {
         }
     }
 
-    // tool panel BG
+    // tool panel bg
     SDL_Rect panel = {WINDOW_WIDTH-UI_PANEL_WIDTH, 0, UI_PANEL_WIDTH, WINDOW_HEIGHT};
     SDL_SetRenderDrawColor(renderer, 30, 30, 30, 255);
     SDL_RenderFillRect(renderer, &panel);
@@ -935,12 +942,12 @@ void draw_ui() {
     SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
     SDL_RenderFillRect(renderer, &help_rect);
 
-    // only show map size controls if on the PAINTER tab
+    // only show map size controls if on the painter tab
     if (editor.current_tab == TAB_PAINTER) {
-        // draw "MAP SIZE" label at the top
+        // draw "map size" label at the top
         if (font != NULL) {
             SDL_Color textColor = {255, 255, 255, 255};
-            SDL_Surface* mapSizeSurface = TTF_RenderText_Solid(font, "MAP SIZE:", textColor);
+            SDL_Surface* mapSizeSurface = TTF_RenderText_Blended(font, "MAP SIZE:", textColor);
             if (mapSizeSurface != NULL) {
                 SDL_Texture* mapSizeTexture = SDL_CreateTextureFromSurface(renderer, mapSizeSurface);
                 if (mapSizeTexture != NULL) {
@@ -957,12 +964,12 @@ void draw_ui() {
             }
         }
 
-        // draw the width and height labels - fixed positioning
+        // draw the width and height labels
         if (font != NULL) {
             SDL_Color textColor = {255, 255, 255, 255};
             
             // draw the width label properly positioned
-            SDL_Surface* wLabelSurface = TTF_RenderText_Solid(font, "W:", textColor);
+            SDL_Surface* wLabelSurface = TTF_RenderText_Blended(font, "W:", textColor);
             if (wLabelSurface != NULL) {
                 SDL_Texture* wLabelTexture = SDL_CreateTextureFromSurface(renderer, wLabelSurface);
                 if (wLabelTexture != NULL) {
@@ -979,7 +986,7 @@ void draw_ui() {
             }
             
             // draw the height label properly positioned
-            SDL_Surface* hLabelSurface = TTF_RenderText_Solid(font, "H:", textColor);
+            SDL_Surface* hLabelSurface = TTF_RenderText_Blended(font, "H:", textColor);
             if (hLabelSurface != NULL) {
                 SDL_Texture* hLabelTexture = SDL_CreateTextureFromSurface(renderer, hLabelSurface);
                 if (hLabelTexture != NULL) {
@@ -1016,7 +1023,7 @@ void draw_ui() {
         // apply button: text
         if (font != NULL) {
             SDL_Color textColor = {255, 255, 255, 255};
-            SDL_Surface* textSurface = TTF_RenderText_Solid(font, editor.applyButton.label, textColor);
+            SDL_Surface* textSurface = TTF_RenderText_Blended(font, editor.applyButton.label, textColor);
             if (textSurface != NULL) {
                 SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                 
@@ -1045,7 +1052,7 @@ void draw_ui() {
         );
 
         // draw tools with labels
-        for(int i=0; i<4; i++) {
+        for(int i=0; i<5; i++) {
             SDL_Color c = tools[i].color;
             SDL_SetRenderDrawColor(renderer, c.r, c.g, c.b, 255);
             SDL_RenderFillRect(renderer, &tools[i].rect);
@@ -1057,7 +1064,7 @@ void draw_ui() {
             // button txt
             if (font != NULL) {
                 SDL_Color textColor = {255, 255, 255, 255};
-                SDL_Surface* textSurface = TTF_RenderText_Solid(font, editor.applyButton.label, textColor);
+                SDL_Surface* textSurface = TTF_RenderText_Blended(font, editor.applyButton.label, textColor);
                 if (textSurface != NULL) {
                     SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                     if (textTexture != NULL) {
@@ -1082,8 +1089,15 @@ void draw_ui() {
 
             // draw label text
             if (font != NULL) {
-                SDL_Color textColor = {255, 255, 255, 255};
-                SDL_Surface* textSurface = TTF_RenderText_Solid(font, tools[i].label, textColor);
+                // determine text color
+                SDL_Color textColor;
+                if (i == TOOL_LIGHT && is_light_color(tools[i].color)) {
+                    textColor = (SDL_Color){0, 0, 0, 255}; // Black text on light background
+                } else {
+                    textColor = (SDL_Color){255, 255, 255, 255}; // White text otherwise
+                }
+                
+                SDL_Surface* textSurface = TTF_RenderText_Blended(font, tools[i].label, textColor);
                 if (textSurface != NULL) {
                     SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                     if (textTexture != NULL) {
@@ -1114,7 +1128,6 @@ void draw_ui() {
         }
     }
 
-    // tab UI elements
     switch (editor.current_tab) {
         case TAB_RENDERING:
             // placeholder for rendering tab
@@ -1146,34 +1159,34 @@ void draw_ui() {
     SDL_RenderFillRect(renderer, &instructions);
 
     // draw the moon engine title/logo in the right panel
-    draw_right_panel_logo();
+    draw_panel_logo();
 
     // draw dialog if active
     draw_dialog(&editor.confirmDialog);
 
-    // Draw color picker if active
+    // draw color picker if active
     draw_color_picker(&editor.colorPicker);
 }
 
 void draw_console() {
-    // Draw console background
+    // draw console background
     SDL_Rect consoleRect = {0, WINDOW_HEIGHT - CONSOLE_HEIGHT, WINDOW_WIDTH - UI_PANEL_WIDTH, CONSOLE_HEIGHT};
-    SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);  // Darker background for console
+    SDL_SetRenderDrawColor(renderer, 20, 20, 20, 255);  // darker background for console
     SDL_RenderFillRect(renderer, &consoleRect);
     
-    // Draw console border
+    // draw console border
     SDL_SetRenderDrawColor(renderer, 80, 80, 80, 255);
     SDL_RenderDrawRect(renderer, &consoleRect);
     
-    // Draw console header
+    // draw console header
     SDL_Rect headerRect = {consoleRect.x, consoleRect.y, consoleRect.w, 20};
     SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
     SDL_RenderFillRect(renderer, &headerRect);
     
-    // Draw "Console" text in header
+    // draw "console" text in header
     if (font != NULL) {
         SDL_Color textColor = {180, 180, 180, 255};
-        SDL_Surface* textSurface = TTF_RenderText_Solid(font, "Debug Console", textColor);
+        SDL_Surface* textSurface = TTF_RenderText_Blended(font, "Debug Console", textColor);
         if (textSurface != NULL) {
             SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
             if (textTexture != NULL) {
@@ -1190,7 +1203,7 @@ void draw_console() {
         }
     }
     
-    // Calculate visible area for console text
+    // calculate visible area for console text
     SDL_Rect textArea = {
         consoleRect.x + 5,
         consoleRect.y + headerRect.h + 5,
@@ -1198,11 +1211,11 @@ void draw_console() {
         consoleRect.h - headerRect.h - 10
     };
     
-    // Determine how many lines can be displayed
-    int line_height = 15; // Approximate line height
+    // determine how many lines can be displayed
+    int line_height = 15;
     int visible_lines = textArea.h / line_height;
     
-    // Draw console text - starting from scroll_offset
+    // draw console text - starting from scroll_offset
     if (font != NULL) {
         SDL_Color textColor = {200, 200, 200, 255};
         int start_line = editor.console.scroll_offset;
@@ -1212,7 +1225,7 @@ void draw_console() {
         }
         
         for (int i = start_line; i < end_line; i++) {
-            SDL_Surface* textSurface = TTF_RenderText_Solid(font, editor.console.lines[i], textColor);
+            SDL_Surface* textSurface = TTF_RenderText_Blended(font, editor.console.lines[i], textColor);
             if (textSurface != NULL) {
                 SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                 if (textTexture != NULL) {
@@ -1230,9 +1243,9 @@ void draw_console() {
         }
     }
     
-    // Draw scroll indicators if needed
+    // draw scroll indicators if needed
     if (editor.console.scroll_offset > 0) {
-        // Draw "more above" indicator
+        // draw "more above" indicator
         SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255);
         for (int i = 0; i < 3; i++) {
             SDL_RenderDrawLine(renderer, 
@@ -1243,7 +1256,7 @@ void draw_console() {
     }
     
     if (editor.console.line_count > editor.console.scroll_offset + visible_lines) {
-        // Draw "more below" indicator
+        // draw "more below" indicator
         SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255);
         for (int i = 0; i < 3; i++) {
             SDL_RenderDrawLine(renderer, 
@@ -1255,11 +1268,11 @@ void draw_console() {
 }
 
 void append_to_console(const char* message) {
-    // Don't add empty messages
+    // don't add empty messages
     if (!message || message[0] == '\0')
         return;
     
-    // If we're at max capacity, shift everything up one line
+    // if at max capacity, shift everything up one line 
     if (editor.console.line_count >= MAX_CONSOLE_LINES) {
         for (int i = 0; i < MAX_CONSOLE_LINES - 1; i++) {
             strcpy(editor.console.lines[i], editor.console.lines[i + 1]);
@@ -1267,12 +1280,12 @@ void append_to_console(const char* message) {
         editor.console.line_count = MAX_CONSOLE_LINES - 1;
     }
     
-    // Add the new message
+    // add the new message
     strncpy(editor.console.lines[editor.console.line_count], message, MAX_CONSOLE_LINE_LENGTH - 1);
-    editor.console.lines[editor.console.line_count][MAX_CONSOLE_LINE_LENGTH - 1] = '\0'; // Ensure null-termination
+    editor.console.lines[editor.console.line_count][MAX_CONSOLE_LINE_LENGTH - 1] = '\0'; // ensure null-termination
     editor.console.line_count++;
     
-    // Auto-scroll to bottom
+    // auto-scroll to bottom
     editor.console.scroll_offset = editor.console.line_count > 0 ? editor.console.line_count - 1 : 0;
 }
 
@@ -1281,8 +1294,7 @@ void clear_console() {
     editor.console.scroll_offset = 0;
 }
 
-// function to draw the moon engine title/logo in the right panel
-void draw_right_panel_logo() {
+void draw_panel_logo() {
     if (font != NULL) {
         // create a larger font for the logo
         TTF_Font* logoFont = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 18);
@@ -1292,13 +1304,13 @@ void draw_right_panel_logo() {
         }
 
         SDL_Color textColor = {180, 180, 180, 255}; // light gray
-        SDL_Surface* textSurface = TTF_RenderText_Solid(logoFont, "MOON Engine", textColor);
+        SDL_Surface* textSurface = TTF_RenderText_Blended(logoFont, "MOON Engine", textColor);
 
         if (textSurface != NULL) {
             SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface); // fixed 'renderer'
             if (textTexture != NULL) {
-                // Position in the instruction box at the bottom of the right panel
-                // Using the same dimensions as the instructions rect in draw_ui()
+                // position in the instruction box at the bottom of the right panel
+                // using the same dimensions as the instructions rect in draw_ui()
                 SDL_Rect instructionsRect = {
                     WINDOW_WIDTH - UI_PANEL_WIDTH + 10, 
                     WINDOW_HEIGHT - 100, 
@@ -1325,10 +1337,11 @@ void draw_right_panel_logo() {
     }
 }
 
+// handle dialog
 void handle_dialog(UIDialog* dialog, int mx, int my) {
     if (!dialog->active) return;
     
-    // check for OK button click
+    // check for ok button click
     if (SDL_PointInRect(&(SDL_Point){mx, my}, &dialog->okButton)) {
         if (dialog->onConfirm != NULL) {
             dialog->onConfirm(dialog->userData);
@@ -1336,7 +1349,7 @@ void handle_dialog(UIDialog* dialog, int mx, int my) {
         dialog->active = 0;
     }
     
-    // check for Cancel button click
+    // check for cancel button click
     if (SDL_PointInRect(&(SDL_Point){mx, my}, &dialog->cancelButton)) {
         dialog->active = 0;
     }
@@ -1410,9 +1423,16 @@ void handle_mouse(SDL_Event* e) {
 
             // check if tools were clicked (only in painter tab)
             if(editor.current_tab == TAB_PAINTER) {
-                for(int i=0; i<4; i++) {
+                for(int i=0; i<5; i++) {
                     if(SDL_PointInRect(&(SDL_Point){mx, my}, &tools[i].rect)) {
                         editor.selected_tool = i;
+                        
+                        // Check if COLOR button was clicked and open the color picker
+                        if (i == TOOL_COLOR_PICKER) {
+                            editor.colorPicker.active = 1;
+                            editor.colorPicker.currentColor = editor.lightColor;
+                            editor.colorPicker.originalColor = editor.lightColor;
+                        }
                         return;
                     }
                 }
@@ -1424,7 +1444,7 @@ void handle_mouse(SDL_Event* e) {
                     if(SDL_PointInRect(&(SDL_Point){mx, my}, &compileButtons[i].rect)) {
                         // handle button clicks
                         switch(i) {
-                            case 0: // COMPILE TO MAP
+                            case 0: // compile to map
                                 if (check_file_exists(MAP_FILE_PATH)) {
                                     // ask for confirmation
                                     strcpy(editor.confirmDialog.message, "Map file already exists. Are you sure you want to overwrite?");
@@ -1437,7 +1457,7 @@ void handle_mouse(SDL_Event* e) {
                                 }
                                 return;
                                 
-                            case 1: // LOAD FROM MAP
+                            case 1: // load from map
                                 if (check_file_exists(MAP_FILE_PATH)) {
                                     // ask for confirmation
                                     strcpy(editor.confirmDialog.message, "Load from map? This will clear your current work.");
@@ -1449,7 +1469,7 @@ void handle_mouse(SDL_Event* e) {
                                 }
                                 return;
                                 
-                            case 2: // OPEN MAP.TXT
+                            case 2: // open map.txt
                                 open_map_in_editor();
                                 return;
                         }
@@ -1457,9 +1477,9 @@ void handle_mouse(SDL_Event* e) {
                 }
             }
 
-            // map editing - available on all tabs now
+            // map editing (NOW AVAILABLE ON ALL TABS)
             editor.mouse_down = 1;
-            editor.light_placed = 0; // reset light placement flag
+            editor.light_placed = 0;
             SDL_Point grid_pos = {
                 (mx - editor.pan_offset.x) / zoomed_cell_size,
                 (my - editor.pan_offset.y) / zoomed_cell_size
@@ -1492,9 +1512,9 @@ void handle_mouse(SDL_Event* e) {
             }
         }
         else if(e->button.button == SDL_BUTTON_RIGHT) {
-            // Check if right-clicking the light button
+            // check if right-clicking the light button
             if (SDL_PointInRect(&(SDL_Point){mx, my}, &tools[TOOL_LIGHT].rect)) {
-                // Open color picker
+                // open color picker
                 editor.colorPicker.active = 1;
                 editor.colorPicker.currentColor = editor.lightColor;
                 editor.colorPicker.originalColor = editor.lightColor;
@@ -1573,7 +1593,7 @@ void handle_mouse(SDL_Event* e) {
                     }
                     // handle light placement (one at a time - skip during drag)
                     else if (editor.selected_tool == TOOL_LIGHT) {
-                        // light placement is handled in MOUSEBUTTONDOWN
+                        // light placement is handled in mousebuttondown
                     }
                     // handle other tools normally
                     else {
@@ -1584,7 +1604,7 @@ void handle_mouse(SDL_Event* e) {
         }
     }
     
-    // Add handling for color picker events
+    // add handling for color picker events
     handle_color_picker(&editor.colorPicker, e);
 }
 
@@ -1592,16 +1612,16 @@ void handle_mouse_wheel(SDL_Event* e) {
     int mx, my;
     SDL_GetMouseState(&mx, &my);
     
-    // Check if mouse is over console
+    // check if mouse is over console
     SDL_Rect consoleRect = {0, WINDOW_HEIGHT - CONSOLE_HEIGHT, WINDOW_WIDTH - UI_PANEL_WIDTH, CONSOLE_HEIGHT};
     if (SDL_PointInRect(&(SDL_Point){mx, my}, &consoleRect)) {
-        // Handle console scrolling
-        if (e->wheel.y > 0) {  // Scroll up
+        // handle console scrolling
+        if (e->wheel.y > 0) {  // scroll up
             if (editor.console.scroll_offset > 0)
                 editor.console.scroll_offset--;
         }
-        else if (e->wheel.y < 0) {  // Scroll down
-            int line_height = 15; // Approximate line height
+        else if (e->wheel.y < 0) {  // scroll down
+            int line_height = 15; // approximate line height
             int visible_lines = (consoleRect.h - 20 - 10) / line_height; // 20 for header, 10 for padding
             
             if (editor.console.scroll_offset + visible_lines < editor.console.line_count)
@@ -1632,7 +1652,6 @@ void handle_mouse_wheel(SDL_Event* e) {
     editor.pan_offset.y = WINDOW_HEIGHT / 2 - center_y * CELL_SIZE * editor.zoom_factor;
 }
 
-// initialize the compile buttons
 void init_compile_buttons() {
     int button_width = UI_PANEL_WIDTH - 20;
     int button_height = 40;
@@ -1640,7 +1659,7 @@ void init_compile_buttons() {
     int button_y_spacing = 10;
     int button_start_y = 60;
 
-    // COMPILE TO MAP button
+    // compile to map button
     compileButtons[0].rect = (SDL_Rect){
         WINDOW_WIDTH-UI_PANEL_WIDTH+button_padding, 
         button_start_y,
@@ -1650,7 +1669,7 @@ void init_compile_buttons() {
     strcpy(compileButtons[0].label, "COMPILE TO MAP");
     compileButtons[0].color = (SDL_Color){80, 150, 80, 255}; // green
 
-    // LOAD FROM MAP button
+    // load from map button
     compileButtons[1].rect = (SDL_Rect){
         WINDOW_WIDTH-UI_PANEL_WIDTH+button_padding, 
         button_start_y + (button_height + button_y_spacing),
@@ -1660,7 +1679,7 @@ void init_compile_buttons() {
     strcpy(compileButtons[1].label, "LOAD FROM MAP");
     compileButtons[1].color = (SDL_Color){80, 80, 150, 255}; // blue
 
-    // OPEN MAP.TXT button
+    // open map.txt button
     compileButtons[2].rect = (SDL_Rect){
         WINDOW_WIDTH-UI_PANEL_WIDTH+button_padding, 
         button_start_y + (button_height + button_y_spacing) * 2,
@@ -1671,7 +1690,6 @@ void init_compile_buttons() {
     compileButtons[2].color = (SDL_Color){150, 80, 80, 255}; // red
 }
 
-// draw compile buttons in the TAB_COMPILE case
 void draw_compile_buttons() {
     for(int i=0; i<MAX_COMPILE_BUTTONS; i++) {
         // draw button background
@@ -1690,7 +1708,7 @@ void draw_compile_buttons() {
         // draw button label
         if (font != NULL) {
             SDL_Color textColor = {255, 255, 255, 255};
-            SDL_Surface* textSurface = TTF_RenderText_Solid(font, compileButtons[i].label, textColor);
+            SDL_Surface* textSurface = TTF_RenderText_Blended(font, compileButtons[i].label, textColor);
             if (textSurface != NULL) {
                 SDL_Texture* textTexture = SDL_CreateTextureFromSurface(renderer, textSurface);
                 if (textTexture != NULL) {
@@ -1709,7 +1727,6 @@ void draw_compile_buttons() {
     }
 }
 
-// check if file exists
 int check_file_exists(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (file) {
@@ -1719,7 +1736,6 @@ int check_file_exists(const char *filename) {
     return 0; // file doesn't exist
 }
 
-// save map to file
 void save_map_to_file() {
     FILE *file = fopen(MAP_FILE_PATH, "w");
     if (!file) {
@@ -1727,7 +1743,7 @@ void save_map_to_file() {
         snprintf(errorMsg, MAX_CONSOLE_LINE_LENGTH, "ERROR: Could not open file for writing: %s", MAP_FILE_PATH);
         append_to_console(errorMsg);
         
-        // Show error dialog
+        // show error dialog
         strcpy(editor.confirmDialog.message, "Failed to write map file! Check permissions or disk space.");
         editor.confirmDialog.active = 1;
         editor.confirmDialog.onConfirm = NULL;
@@ -1735,10 +1751,10 @@ void save_map_to_file() {
         return;
     }
     
-    // Write map dimensions
+    // write map dimensions
     fprintf(file, "%d %d\n", editor.map_w, editor.map_h);
     
-    // Write map data
+    // write map data
     for(int y = 0; y < editor.map_h; y++) {
         for(int x = 0; x < editor.map_w; x++) {
             fprintf(file, "%c", editor.cells[y][x]);
@@ -1752,14 +1768,13 @@ void save_map_to_file() {
     snprintf(successMsg, MAX_CONSOLE_LINE_LENGTH, "Map saved to: %s", MAP_FILE_PATH);
     append_to_console(successMsg);
     
-    // Show success dialog
+    // show success dialog
     strcpy(editor.confirmDialog.message, "Map successfully compiled and saved!");
     editor.confirmDialog.active = 1;
     editor.confirmDialog.onConfirm = NULL;
     editor.confirmDialog.userData = NULL;
 }
 
-// load default map
 void load_default_map() {
     // setup a simple default map
     editor.map_w = 10;
@@ -1790,7 +1805,6 @@ void load_default_map() {
     center_grid();
 }
 
-// load map from file
 void load_map_from_file() {
     FILE *file = fopen(MAP_FILE_PATH, "r");
     if (!file) {
@@ -1862,7 +1876,6 @@ void load_map_from_file() {
     center_grid();
 }
 
-// open map file in default text editor
 void open_map_in_editor() {
     if (!check_file_exists(MAP_FILE_PATH)) {
         show_map_not_found_dialog();
@@ -1881,7 +1894,6 @@ void open_map_in_editor() {
     printf("Opening map file in text editor: %s\n", MAP_FILE_PATH);
 }
 
-// show dialog when map file is not found
 void show_map_not_found_dialog() {
     strcpy(editor.confirmDialog.message, "MAP NOT FOUND! DEFAULT MAP LOADED!");
     editor.confirmDialog.active = 1;
@@ -1889,13 +1901,12 @@ void show_map_not_found_dialog() {
     editor.confirmDialog.userData = NULL;
 }
 
-// Initialize color picker
 void init_color_picker() {
     editor.colorPicker.active = 0;
     editor.colorPicker.currentColor = editor.lightColor;
     editor.colorPicker.originalColor = editor.lightColor;
     
-    // Position the color picker in the center of the screen
+    // position the color picker in the center of the screen
     editor.colorPicker.rect = (SDL_Rect){
         (WINDOW_WIDTH - COLOR_PICKER_WIDTH) / 2,
         (WINDOW_HEIGHT - COLOR_PICKER_HEIGHT) / 2,
@@ -1903,7 +1914,7 @@ void init_color_picker() {
         COLOR_PICKER_HEIGHT
     };
     
-    // Position the color preview box
+    // position the color preview box
     editor.colorPicker.previewRect = (SDL_Rect){
         editor.colorPicker.rect.x + COLOR_PICKER_WIDTH - 80,
         editor.colorPicker.rect.y + 30,
@@ -1911,7 +1922,7 @@ void init_color_picker() {
         60
     };
     
-    // Position the Apply button
+    // position the apply button
     editor.colorPicker.applyButton = (SDL_Rect){
         editor.colorPicker.rect.x + COLOR_PICKER_WIDTH - 160,
         editor.colorPicker.rect.y + COLOR_PICKER_HEIGHT - 50,
@@ -1919,7 +1930,7 @@ void init_color_picker() {
         30
     };
     
-    // Position the Cancel button
+    // position the cancel button
     editor.colorPicker.cancelButton = (SDL_Rect){
         editor.colorPicker.rect.x + COLOR_PICKER_WIDTH - 80,
         editor.colorPicker.rect.y + COLOR_PICKER_HEIGHT - 50,
@@ -1927,7 +1938,7 @@ void init_color_picker() {
         30
     };
     
-    // Position RGB sliders and inputs (we'll implement these fully later)
+    // position rgb sliders and inputs (will implement these fully later)
     int slider_y_start = editor.colorPicker.rect.y + 30;
     int slider_height = 20;
     int slider_spacing = 35;
@@ -1935,7 +1946,7 @@ void init_color_picker() {
     int input_width = 45;
     
     for (int i = 0; i < 3; i++) {
-        // Slider
+        // slider
         editor.colorPicker.sliders[i] = (SDL_Rect){
             editor.colorPicker.rect.x + 30,
             slider_y_start + i * slider_spacing,
@@ -1943,7 +1954,7 @@ void init_color_picker() {
             slider_height
         };
         
-        // Text input
+        // text input
         editor.colorPicker.inputs[i].rect = (SDL_Rect){
             editor.colorPicker.rect.x + 40 + slider_width,
             slider_y_start + i * slider_spacing,
@@ -1951,7 +1962,7 @@ void init_color_picker() {
             slider_height
         };
         
-        // Default to white (255)
+        // default to white (255)
         sprintf(editor.colorPicker.inputs[i].text, "255");
         editor.colorPicker.inputs[i].active = 0;
         editor.colorPicker.inputs[i].cursorPosition = 3; // position at end
@@ -1961,29 +1972,28 @@ void init_color_picker() {
     }
 }
 
-// Draw the color picker dialog
 void draw_color_picker(ColorPicker* picker) {
     if (!picker->active) return;
     
-    // Semi-transparent overlay
+    // semi-transparent overlay
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 192);
     SDL_Rect overlay = {0, 0, WINDOW_WIDTH, WINDOW_HEIGHT};
     SDL_RenderFillRect(renderer, &overlay);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_NONE);
     
-    // Dialog background
+    // dialog background
     SDL_SetRenderDrawColor(renderer, 40, 40, 40, 255);
     SDL_RenderFillRect(renderer, &picker->rect);
     
-    // Dialog border
+    // dialog border
     SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
     SDL_RenderDrawRect(renderer, &picker->rect);
     
-    // Title
+    // title
     if (font != NULL) {
         SDL_Color textColor = {255, 255, 255, 255};
-        SDL_Surface* titleSurface = TTF_RenderText_Solid(font, "LIGHT COLOR", textColor);
+        SDL_Surface* titleSurface = TTF_RenderText_Blended(font, "LIGHT COLOR", textColor);
         if (titleSurface != NULL) {
             SDL_Texture* titleTexture = SDL_CreateTextureFromSurface(renderer, titleSurface);
             if (titleTexture != NULL) {
@@ -2000,7 +2010,7 @@ void draw_color_picker(ColorPicker* picker) {
         }
     }
     
-    // Color preview
+    // color preview
     SDL_SetRenderDrawColor(renderer, 
         picker->currentColor.r, 
         picker->currentColor.g, 
@@ -2010,26 +2020,24 @@ void draw_color_picker(ColorPicker* picker) {
     SDL_SetRenderDrawColor(renderer, 100, 100, 100, 255);
     SDL_RenderDrawRect(renderer, &picker->previewRect);
     
-    // We'll add the sliders and input fields later
-    
-    // Apply button
+    // apply button
     SDL_SetRenderDrawColor(renderer, 80, 150, 80, 255);
     SDL_RenderFillRect(renderer, &picker->applyButton);
     SDL_SetRenderDrawColor(renderer, 100, 180, 100, 255);
     SDL_RenderDrawRect(renderer, &picker->applyButton);
     
-    // Cancel button
+    // cancel button
     SDL_SetRenderDrawColor(renderer, 150, 80, 80, 255);
     SDL_RenderFillRect(renderer, &picker->cancelButton);
     SDL_SetRenderDrawColor(renderer, 180, 100, 100, 255);
     SDL_RenderDrawRect(renderer, &picker->cancelButton);
     
-    // Button text
+    // button text
     if (font != NULL) {
         SDL_Color textColor = {255, 255, 255, 255};
         
-        // Apply button text
-        SDL_Surface* applySurface = TTF_RenderText_Solid(font, "APPLY", textColor);
+        // apply button text
+        SDL_Surface* applySurface = TTF_RenderText_Blended(font, "APPLY", textColor);
         if (applySurface != NULL) {
             SDL_Texture* applyTexture = SDL_CreateTextureFromSurface(renderer, applySurface);
             if (applyTexture != NULL) {
@@ -2045,8 +2053,8 @@ void draw_color_picker(ColorPicker* picker) {
             SDL_FreeSurface(applySurface);
         }
         
-        // Cancel button text
-        SDL_Surface* cancelSurface = TTF_RenderText_Solid(font, "CANCEL", textColor);
+        // cancel button text
+        SDL_Surface* cancelSurface = TTF_RenderText_Blended(font, "CANCEL", textColor);
         if (cancelSurface != NULL) {
             SDL_Texture* cancelTexture = SDL_CreateTextureFromSurface(renderer, cancelSurface);
             if (cancelTexture != NULL) {
@@ -2062,13 +2070,131 @@ void draw_color_picker(ColorPicker* picker) {
             SDL_FreeSurface(cancelSurface);
         }
         
-        // RGB labels
+        // rgb labels
         const char* labels[3] = {"R:", "G:", "B:"};
         for (int i = 0; i < 3; i++) {
-            SDL_Surface* labelSurface = TTF_RenderText_Solid(font, labels[i], textColor);
+            SDL_Surface* labelSurface = TTF_RenderText_Blended(font, labels[i], textColor);
             if (labelSurface != NULL) {
                 SDL_Texture* labelTexture = SDL_CreateTextureFromSurface(renderer, labelSurface);
                 if (labelTexture != NULL) {
                     SDL_Rect labelRect = {
                         picker->sliders[i].x - 20,
                         picker->sliders[i].y + (picker->sliders[i].h - labelSurface->h) / 2,
+                        labelSurface->w,
+                        labelSurface->h
+                    };
+                    SDL_RenderCopy(renderer, labelTexture, NULL, &labelRect);
+                    SDL_DestroyTexture(labelTexture);
+                }
+                SDL_FreeSurface(labelSurface);
+            }
+        }
+    }
+}
+
+void handle_color_picker(ColorPicker* picker, SDL_Event* e) {
+    if (!picker->active) return;
+
+    int mx, my;
+    SDL_GetMouseState(&mx, &my);
+
+    if (e->type == SDL_MOUSEBUTTONDOWN) {
+        if (SDL_PointInRect(&(SDL_Point){mx, my}, &picker->applyButton)) {
+            editor.lightColor = picker->currentColor;
+            tools[TOOL_LIGHT].color = picker->currentColor;
+            picker->active = 0;
+        } else if (SDL_PointInRect(&(SDL_Point){mx, my}, &picker->cancelButton)) {
+            picker->currentColor = picker->originalColor;
+            picker->active = 0;
+        }
+    }
+}
+
+int is_light_color(SDL_Color color) {
+    // Formula for perceived brightness
+    // Returns 1 for light colors (should use black text)
+    // Returns 0 for dark colors (should use white text)
+    float brightness = (0.299f * color.r + 0.587f * color.g + 0.114f * color.b) / 255.0f;
+    return brightness > 0.6f; // Threshold for light vs dark
+}
+
+int main(int argc, char* argv[]) {
+    if (SDL_Init(SDL_INIT_VIDEO) < 0) {
+        printf("SDL could not initialize! SDL_Error: %s\n", SDL_GetError());
+        return 1;
+    }
+
+    if (TTF_Init() == -1) {
+        printf("TTF could not initialize! TTF_Error: %s\n", TTF_GetError());
+        SDL_Quit();
+        return 1;
+    }
+
+    window = SDL_CreateWindow("MOON Editor", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, WINDOW_WIDTH, WINDOW_HEIGHT, SDL_WINDOW_SHOWN);
+    if (!window) {
+        printf("Window could not be created! SDL_Error: %s\n", SDL_GetError());
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+    if (!renderer) {
+        printf("Renderer could not be created! SDL_Error: %s\n", SDL_GetError());
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+
+    font = TTF_OpenFont("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 14);
+    if (!font) {
+        printf("Failed to load font! TTF_Error: %s\n", TTF_GetError());
+        SDL_DestroyRenderer(renderer);
+        SDL_DestroyWindow(window);
+        TTF_Quit();
+        SDL_Quit();
+        return 1;
+    }
+    
+    // set font hinting
+    TTF_SetFontHinting(font, TTF_HINTING_LIGHT);
+
+    init_editor();
+
+    SDL_Event e;
+    int running = 1;
+    while (running) {
+        while (SDL_PollEvent(&e)) {
+            if (e.type == SDL_QUIT) {
+                running = 0;
+            } else if (e.type == SDL_MOUSEBUTTONDOWN || e.type == SDL_MOUSEBUTTONUP || e.type == SDL_MOUSEMOTION) {
+                handle_mouse(&e);
+            } else if (e.type == SDL_MOUSEWHEEL) {
+                handle_mouse_wheel(&e);
+            } else if (e.type == SDL_TEXTINPUT || e.type == SDL_KEYDOWN) {
+                for (int i = 0; i < MAX_INPUT_FIELDS; i++) {
+                    handle_text_input(&editor.sizeInputs[i], &e);
+                }
+            }
+        }
+
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+
+        draw_grid();
+        draw_blocks();
+        draw_ui();
+        draw_console();
+
+        SDL_RenderPresent(renderer);
+    }
+
+    TTF_CloseFont(font);
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroyWindow(window);
+    TTF_Quit();
+    SDL_Quit();
+
+    return 0;
+}
