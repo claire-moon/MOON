@@ -2111,9 +2111,6 @@ void handle_color_picker(ColorPicker* picker, SDL_Event* e) {
 }
 
 int is_light_color(SDL_Color color) {
-    // Formula for perceived brightness
-    // Returns 1 for light colors (should use black text)
-    // Returns 0 for dark colors (should use white text)
     float brightness = (0.299f * color.r + 0.587f * color.g + 0.114f * color.b) / 255.0f;
     return brightness > 0.6f; // Threshold for light vs dark
 }

@@ -1,15 +1,9 @@
-/**
- * moon engine - minimalist opengl open-source engine
- * lightweight and customizable game engine targeting older systems
- * designed for windows 98/xp, mac, and linux compatibility
- */
-
  #include <stdio.h>
  #include <stdlib.h>
  #include <string.h>
  #include <time.h>
  #include <math.h>
- #include <stdarg.h> // add this line
+ #include <stdarg.h>
  
  // use older opengl for maximum compatibility
  #ifdef _WIN32
@@ -58,7 +52,7 @@
  // message display system
  #define MAX_MESSAGE_LENGTH 256
  #define MAX_ACTIVE_MESSAGES 5
- #define MESSAGE_DISPLAY_TIME 2.0f  // default display time in seconds
+ #define MESSAGE_DISPLAY_TIME 2.0f  
 
  typedef struct {
      char text[MAX_MESSAGE_LENGTH];  // message text
@@ -107,7 +101,7 @@
      float shadow_intensity;
      int render_distance;
 
-     int is_mouse_captured;       // track if mouse is currently captured
+     int is_mouse_captured;      
  } EngineConfig;
  
  // global variables
@@ -137,26 +131,24 @@
  int check_collision(float x, float z);
  void setup_fog(void);
  void init_perlin(void);
- void append_to_console(const char* message); // add this line
- void draw_message(const char* text, float x, float y, float r, float g, float b); // add this line
- void show_message(const char* format, ...); // add this line
- void show_message_with_highlight(const char* message, const char* highlight_word, // add this line
+ void append_to_console(const char* message); 
+ void draw_message(const char* text, float x, float y, float r, float g, float b); 
+ void show_message(const char* format, ...); 
+ void show_message_highlight(const char* message, const char* highlight_word, 
                                   float r, float g, float b, 
-                                  float highlight_r, float highlight_g, float highlight_b); // add this line
- void update_messages(void); // add this line
- void draw_messages(void); // add this line
+                                  float highlight_r, float highlight_g, float highlight_b); 
+ void update_messages(void); 
+ void draw_messages(void); 
  
- // perlin noise generation prototypes
+ // perlin noise generation functions
  float perlin_noise_2d(float x, float y);
  void generate_perlin_texture(unsigned char* buffer, int width, int height, int face);
  
- // input handling
+ // input handling functions
  void handle_keyboard(void);
  void handle_mouse(void);
  
- /**
-  * main entry point
-  */
+
  int main(int argc, char** argv) {
      // seed random number generator
      srand((unsigned int)time(NULL));
@@ -204,9 +196,7 @@
      return 0;
  }
  
- /**
-  * initialize opengl settings
-  */
+ //OPENGL INITIALIZATION
  void init_opengl(void) {
      // basic opengl setup
      glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -239,9 +229,7 @@
      config.is_mouse_captured = 1;
  }
  
-/**
- * save configuration to ini file
- */
+//SAVE CONFIG TO INI
 void save_config(void) {
     FILE *file = fopen(CONFIG_FILE, "w");
     if (!file) {
@@ -296,9 +284,7 @@ void save_config(void) {
     printf("CONFIG SAVED TO '%s'\n", CONFIG_FILE);
 }
 
- /**
- * load configuration from ini file
- */
+//LOAD CONFIG FROM INI
 void load_config(void) {
     FILE *file = fopen(CONFIG_FILE, "r");
     
@@ -417,9 +403,7 @@ void load_config(void) {
     }
 }
  
- /**
-  * clean up resources
-  */
+//CLEAN UP RESOURCES
  void cleanup(void) {
      // delete textures
      glDeleteTextures(6, texture_ids);
@@ -428,9 +412,7 @@ void load_config(void) {
      save_config();
  }
  
- /**
-  * generate perlin noise texture
-  */
+//PERLIN NOISE GENERATION (GRAYSCALE TEX)
  void generate_perlin_texture(unsigned char* buffer, int width, int height, int face) {
      int x, y;
      float scale = 0.1f * (face + 1); // different scale per face
@@ -484,9 +466,8 @@ void load_config(void) {
  }
  
 
-/**
- * generate procedural noise textures
- */
+//TEX HANDLING
+//WALLS 0, LIGHTS 2, FLOOR/CEILING USES CONFIG SPEC IDS
 void generate_noise_textures(void) {
     int i, width, height;
     unsigned char *texture_data;
@@ -498,7 +479,7 @@ void generate_noise_textures(void) {
     texture_data = (unsigned char*)malloc(width * height * 3); // rgb data
     
     if (!texture_data) {
-        fprintf(stderr, "ERROR: Could not allocate memory for textures!\n");
+        fprintf(stderr, "ERROR: COULDNT ALLOCATE MEM FOR TEX!!\n");
         return;
     }
     
@@ -531,9 +512,7 @@ void generate_noise_textures(void) {
            6, width, height);
 }
 
-/**
- * render the scene
- */
+//SCENE RENDERING HANDLER
 void render_scene(void) {
     // process input
     handle_keyboard();
@@ -683,9 +662,7 @@ void render_scene(void) {
     glutSwapBuffers();
 }
 
- /**
-  * set up lighting
-  */
+//LIGHTING INIT
  void setup_lighting(void) {
      // simple lighting setup
      GLfloat light_ambient[] = { 0.2f, 0.2f, 0.2f, 1.0f };
@@ -699,9 +676,7 @@ void render_scene(void) {
      glLightfv(GL_LIGHT0, GL_POSITION, light_position);
  }
  
- /**
-  * initialize camera
-  */
+//CAMERA INIT
  void init_camera(void) {
      camera.pos_x = 1.5f;
      camera.pos_z = 1.5f;
@@ -717,9 +692,7 @@ void render_scene(void) {
      update_camera_direction();
  }
  
- /**
-  * update camera direction based on rotation
-  */
+//camera direction/rotation handler
  void update_camera_direction(void) {
      float rad = camera_rotation * 0.0174532925f; // convert to radians
      
@@ -731,10 +704,7 @@ void render_scene(void) {
      camera.plane_z = camera.dir_x * 0.66f;
  }
  
- /**
-  * check if position collides with a wall
-  * returns 1 if collision, 0 if no collision
-  */
+//COLLISION CHECKING
  int check_collision(float x, float z) {
      // convert to map coordinates
      int map_x = (int)x;
@@ -754,9 +724,7 @@ void render_scene(void) {
      return 0;
  }
 
- /**
- * set up fog effects
- */
+//fog FX handler
 void setup_fog(void) {
     GLfloat fog_color[4] = {
         config.fog_r / 255.0f,
@@ -777,9 +745,7 @@ void setup_fog(void) {
     glFogf(GL_FOG_END, config.fog_end_distance);
 }
  
- /**
-  * load map data
-  */
+//load map data
  void load_map(void) {
      FILE *file;
      char line[256];
@@ -854,9 +820,7 @@ void setup_fog(void) {
      printf("MAP LOADED SUCCESSFULLY!\n");
  }
  
- /**
- * toggle fullscreen mode
- */
+//fullscreen handling (subject to change!!)
 void toggle_fullscreen(void) {
     config.fullscreen = !config.fullscreen;
     
@@ -872,7 +836,7 @@ void toggle_fullscreen(void) {
         glutWarpPointer(glutGet(GLUT_WINDOW_WIDTH)/2, glutGet(GLUT_WINDOW_HEIGHT)/2);
         
         // show on-screen message
-        show_message_with_highlight("FULL SCREEN ON", "ON", 
+        show_message_highlight("FULL SCREEN ON", "ON", 
                                    1.0f, 1.0f, 1.0f,  // white for main text 
                                    1.0f, 0.0f, 0.0f); // red for "on"
         
@@ -890,7 +854,7 @@ void toggle_fullscreen(void) {
         glutWarpPointer(WINDOW_WIDTH/2, WINDOW_HEIGHT/2);
         
         // show on-screen message
-        show_message_with_highlight("FULL SCREEN OFF", "OFF", 
+        show_message_highlight("FULL SCREEN OFF", "OFF", 
                                    1.0f, 1.0f, 1.0f,  // white for main text
                                    1.0f, 0.0f, 0.0f); // red for "off"
         
@@ -898,9 +862,7 @@ void toggle_fullscreen(void) {
     }
 }
 
-/**
- * simple console message function
- */
+//console printing
 void append_to_console(const char* message) {
     printf("CONSOLE: %s\n", message);
 }
@@ -988,9 +950,7 @@ void keyboard_func(unsigned char key, int x, int y) {
      last_y = y;
  }
  
- /**
-  * handle keyboard input
-  */
+//KEYBOARD INPUT HANDLER
  void handle_keyboard(void) {
      //process keyboard state
      int modifiers = glutGetModifiers();
@@ -1172,14 +1132,11 @@ void keyboard_func(unsigned char key, int x, int y) {
          w);
  }
 
-/**
- * message system implementation
- */
+//MESSAGE SYSTEM
+//IS BELOW
+//!!!!
 
-/**
- * draw a text string at the specified position with the given color
- * with bold effect
- */
+//draw message at specified location 
 void draw_message(const char* text, float x, float y, float r, float g, float b) {
     // save current attributes
     glPushAttrib(GL_CURRENT_BIT | GL_LIGHTING_BIT | GL_TEXTURE_BIT);
@@ -1205,7 +1162,6 @@ void draw_message(const char* text, float x, float y, float r, float g, float b)
     glRasterPos2f(x, y);
     
     // draw each character in the string using a larger font
-    // use times_roman_24 instead of helvetica_18 for larger text
     for (int i = 0; text[i] != '\0'; i++) {
         glutBitmapCharacter(GLUT_BITMAP_TIMES_ROMAN_24, text[i]);
     }
@@ -1226,9 +1182,7 @@ void draw_message(const char* text, float x, float y, float r, float g, float b)
     glPopAttrib();
 }
 
-/**
- * show a message on screen with standard formatting
- */
+//message with normal formatting (no highlights)
 void show_message(const char* format, ...) {
     va_list args;
     char buffer[MAX_MESSAGE_LENGTH];
@@ -1254,10 +1208,8 @@ void show_message(const char* format, ...) {
     }
 }
 
-/**
- * show a message with a highlighted word (different color)
- */
-void show_message_with_highlight(const char* message, const char* highlight_word, 
+//same as above but with highlights
+void show_message_highlight(const char* message, const char* highlight_word, 
                                float r, float g, float b, 
                                float highlight_r, float highlight_g, float highlight_b) {
     // find a free slot or replace the oldest message
@@ -1286,9 +1238,7 @@ void show_message_with_highlight(const char* message, const char* highlight_word
     }
 }
 
-/**
- * update message timers and deactivate expired messages
- */
+//message handler
 void update_messages(void) {
     float current_time = glutGet(GLUT_ELAPSED_TIME) / 1000.0f;
     int active_count = 0;
@@ -1307,9 +1257,7 @@ void update_messages(void) {
     message_count = active_count;
 }
 
-/**
- * draw all active messages
- */
+//draw ALL active messages
 void draw_messages(void) {
     if (message_count == 0) return; // no messages to draw
     
